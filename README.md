@@ -57,7 +57,12 @@ frontier-council "Career question" --output transcript.md
 
 # Share via GitHub Gist
 frontier-council "Important decision" --share
+
+# List past sessions
+frontier-council --sessions
 ```
+
+All sessions are auto-saved to `~/.frontier-council/sessions/` for later review.
 
 ## Options
 
@@ -73,6 +78,8 @@ frontier-council "Important decision" --share
 | `--persona TEXT` | Context about the person asking |
 | `--advocate N` | Which speaker (1-5) should be devil's advocate (default: random) |
 | `--quiet` | Suppress progress output |
+| `--sessions` | List recent saved sessions |
+| `--no-save` | Don't auto-save transcript to ~/.frontier-council/sessions/ |
 
 ## How It Works
 

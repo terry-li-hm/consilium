@@ -4,10 +4,26 @@ import argparse
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+
+
+def get_sessions_dir() -> Path:
+    """Get the sessions directory, creating if needed."""
+    sessions_dir = Path.home() / ".frontier-council" / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    return sessions_dir
+
+
+def slugify(text: str, max_len: int = 40) -> str:
+    """Convert text to a filename-safe slug."""
+    text = text.lower()
+    text = re.sub(r'[^\w\s-]', '', text)
+    text = re.sub(r'[\s_-]+', '-', text)
+    return text[:max_len].strip('-')
 
 from .council import (
     COUNCIL,
@@ -78,7 +94,32 @@ Examples:
         choices=[1, 2, 3, 4, 5],
         help="Which speaker (1-5) should be devil's advocate (default: random)",
     )
+    parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Don't auto-save transcript to ~/.frontier-council/sessions/",
+    )
+    parser.add_argument(
+        "--sessions",
+        action="store_true",
+        help="List recent sessions and exit",
+    )
     args = parser.parse_args()
+
+    # Handle --sessions flag
+    if args.sessions:
+        sessions_dir = get_sessions_dir()
+        sessions = sorted(sessions_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not sessions:
+            print("No sessions found.")
+        else:
+            print(f"Sessions in {sessions_dir}:\n")
+            for s in sessions[:20]:  # Show last 20
+                mtime = datetime.fromtimestamp(s.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+                print(f"  {mtime}  {s.name}")
+            if len(sessions) > 20:
+                print(f"\n  ... and {len(sessions) - 20} more")
+        sys.exit(0)
 
     # Auto-detect social context if not explicitly set
     social_mode = args.social or detect_social_context(args.question)
@@ -153,11 +194,37 @@ Examples:
             print("=" * 60)
             print()
 
-        # Save transcript
+        # Save transcript to user-specified location
         if args.output:
             Path(args.output).write_text(transcript)
             if not args.quiet:
                 print(f"Transcript saved to: {args.output}")
+
+        # Auto-save to sessions directory
+        session_path = None
+        if not args.no_save:
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            slug = slugify(args.question)
+            filename = f"{timestamp}-{slug}.md"
+            session_path = get_sessions_dir() / filename
+
+            # Build full session content with metadata header
+            session_content = f"""# Council Session
+
+**Question:** {args.question}
+**Date:** {datetime.now().strftime("%Y-%m-%d %H:%M")}
+**Rounds:** {args.rounds}
+**Mode:** {"named" if args.named else "anonymous"}, {"blind" if use_blind else "no blind"}{", social" if social_mode else ""}
+{f"**Context:** {args.context}" if args.context else ""}
+{f"**Persona:** {args.persona}" if args.persona else ""}
+
+---
+
+{transcript}
+"""
+            session_path.write_text(session_content)
+            if not args.quiet:
+                print(f"Session saved to: {session_path}")
 
         # Share via gist
         gist_url = None
@@ -190,10 +257,11 @@ Examples:
                 print("Error: 'gh' CLI not found. Install with: brew install gh", file=sys.stderr)
 
         # Log to history
-        history_file = Path(__file__).parent.parent / "council_history.jsonl"
+        history_file = get_sessions_dir().parent / "history.jsonl"
         log_entry = {
             "timestamp": datetime.now().isoformat(),
             "question": args.question[:200],
+            "session": str(session_path) if session_path else None,
             "gist": gist_url,
             "context": args.context,
             "rounds": args.rounds,

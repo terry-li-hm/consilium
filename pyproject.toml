@@ -1,6 +1,6 @@
 [project]
 name = "frontier-council"
-version = "0.1.1"
+version = "0.1.2"
 description = "Multi-model deliberation for important decisions. 5 frontier LLMs debate, then a judge synthesizes consensus."
 readme = "README.md"
 requires-python = ">=3.11"
