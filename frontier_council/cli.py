@@ -163,9 +163,14 @@ Examples:
             print(f"Error: Unknown model '{args.challenger}'. Valid models: {', '.join(n for n, _, _ in COUNCIL)}", file=sys.stderr)
             sys.exit(1)
         challenger_idx = model_name_map[challenger_lower]
-    elif "domain" in DOMAIN_CONTEXTS or args.domain:
-        # Default challenger: Grok if domain is set (Grok naturally tends contrarian)
-        challenger_idx = 3  # Grok index in COUNCIL
+    elif args.domain:
+        # Default challenger: Grok (index 3) when domain is set - Grok naturally tends contrarian
+        challenger_idx = 3
+
+    if not args.quiet and challenger_idx is not None:
+        challenger_name = COUNCIL[challenger_idx][0]
+        print(f"(Contrainian challenger: {challenger_name})")
+        print()
 
     # Get API keys
     api_key = os.environ.get("OPENROUTER_API_KEY")
