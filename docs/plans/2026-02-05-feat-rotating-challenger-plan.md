@@ -198,11 +198,14 @@ def run_council(
 - [x] `--advocate` shows deprecation warning and maps to `--challenger`
 - [x] Challenger excluded from consensus detection
 - [x] Transcript shows which model is challenger each round
+- [x] Claude removed from council (judge-only)
+- [x] Judge has own voice with "Judge's Own Take" section
 
 ### Non-Functional Requirements
 - [x] No breaking changes to existing scripts (deprecation, not removal)
 - [x] Tests pass for new rotation logic
 - [x] README updated with new behavior
+- [x] Tests updated for 4-model council
 
 ## Success Metrics
 
