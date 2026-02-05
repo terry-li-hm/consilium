@@ -913,9 +913,10 @@ Factor this into your advice — don't just give strategically optimal answers, 
                 })
 
             model_name = model.split("/")[-1]
+            challenger_indicator = " (challenger)" if idx == current_challenger else ""
 
             if verbose:
-                print(f"### {model_name}")
+                print(f"### {model_name}{challenger_indicator}")
                 if is_thinking_model(model):
                     print("(thinking...)", flush=True)
 
@@ -951,7 +952,6 @@ Factor this into your advice — don't just give strategically optimal answers, 
             if verbose:
                 print()
 
-            challenger_indicator = " (challenger)" if idx == current_challenger else ""
             output_parts.append(f"### {model_name}{challenger_indicator}\n{response}")
 
         # current_challenger already calculated in the speaker loop above
