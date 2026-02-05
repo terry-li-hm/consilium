@@ -101,7 +101,7 @@ Examples:
         "--advocate",
         type=int,
         choices=[1, 2, 3, 4, 5],
-        help="Which speaker (1-5) should be devil's advocate (default: random)",
+        help="DEPRECATED: Use --challenger instead. Maps to --challenger by model name.",
     )
     parser.add_argument(
         "--domain",
@@ -209,14 +209,28 @@ Examples:
         print()
 
     try:
-        advocate_idx = (args.advocate - 1) if args.advocate else random.randint(0, len(COUNCIL) - 1)
+        # Handle deprecated --advocate flag
+        if args.advocate:
+            print("Warning: --advocate is deprecated. Use --challenger instead.", file=sys.stderr)
+            model_names = [n for n, _, _ in COUNCIL]
+            mapped_model = model_names[args.advocate - 1].lower()
+            print(f"  Mapping --advocate {args.advocate} to --challenger {mapped_model}", file=sys.stderr)
+            if not args.challenger:
+                args.challenger = mapped_model
+            # Re-resolve challenger_idx after mapping
+            challenger_lower = args.challenger.lower()
+            model_name_map = {n.lower(): i for i, (n, _, _) in enumerate(COUNCIL)}
+            challenger_idx = model_name_map.get(challenger_lower, 0)
 
         if not args.quiet and args.persona:
             print(f"(Persona context: {args.persona})")
             print()
+
+        # Show starting challenger (now rotates each round)
         if not args.quiet:
-            advocate_name = COUNCIL[advocate_idx][0]
-            print(f"(Devil's advocate: {advocate_name})")
+            starting_challenger_idx = challenger_idx if challenger_idx is not None else 0
+            starting_challenger_name = COUNCIL[starting_challenger_idx][0]
+            print(f"(Starting challenger: {starting_challenger_name}, rotates each round)")
             print()
 
         transcript, failed_models = run_council(
@@ -232,7 +246,6 @@ Examples:
             context=args.context,
             social_mode=social_mode,
             persona=args.persona,
-            advocate_idx=advocate_idx,
             domain=domain_context,
             challenger_idx=challenger_idx,
             format=args.format,

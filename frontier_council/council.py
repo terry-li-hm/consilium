@@ -542,23 +542,44 @@ def sanitize_speaker_content(content: str) -> str:
     return sanitized
 
 
-def detect_consensus(conversation: list[tuple[str, str]], council_size: int) -> tuple[bool, str]:
-    """Detect if council has converged. Returns (converged, reason)."""
+def detect_consensus(
+    conversation: list[tuple[str, str]],
+    council_config: list[tuple[str, str, tuple[str, str] | None]],
+    current_challenger_idx: int | None = None,
+) -> tuple[bool, str]:
+    """Detect if council has converged. Returns (converged, reason).
+
+    Excludes the current challenger from consensus count since they're
+    structurally incentivized to disagree.
+    """
+    council_size = len(council_config)
+
     if len(conversation) < council_size:
         return False, "insufficient responses"
 
-    recent = [text for _, text in conversation[-council_size:]]
+    recent = conversation[-council_size:]
 
-    consensus_count = sum(1 for text in recent if "CONSENSUS:" in text.upper())
-    if consensus_count >= council_size - 1:
+    # Exclude challenger from consensus count
+    if current_challenger_idx is not None:
+        challenger_name = council_config[current_challenger_idx][0]
+        recent = [(name, text) for name, text in recent if name != challenger_name]
+
+    effective_size = len(recent)
+    if effective_size == 0:
+        return False, "no non-challenger responses"
+
+    threshold = effective_size - 1  # Need all-but-one non-challengers to agree
+
+    consensus_count = sum(1 for _, text in recent if "CONSENSUS:" in text.upper())
+    if consensus_count >= threshold:
         return True, "explicit consensus signals"
 
     agreement_phrases = ["i agree with", "i concur", "we all agree", "consensus emerging"]
     agreement_count = sum(
-        1 for text in recent
+        1 for _, text in recent
         if any(phrase in text.lower() for phrase in agreement_phrases)
     )
-    if agreement_count >= council_size - 1:
+    if agreement_count >= threshold:
         return True, "agreement language detected"
 
     return False, "no consensus"
@@ -716,9 +737,8 @@ def run_council(
     context: str | None = None,
     social_mode: bool = False,
     persona: str | None = None,
-    advocate_idx: int | None = None,
     domain: str | None = None,
-    challenger_idx: int | None = None,
+    challenger_idx: int | None = None,  # Starting challenger index, rotates each round
     format: str = "prose",
 ) -> tuple[str, list[str]]:
     """Run the council deliberation. Returns (transcript, failed_models)."""
@@ -780,19 +800,6 @@ Your output should feel natural in conversation - something you'd actually say o
 Avoid structured, multi-part diagnostic questions that sound like interrogation.
 Simple and human beats strategic and comprehensive. Optimize for being relatable, not thorough."""
 
-    devils_advocate_addition = """
-
-SPECIAL ROLE: You are the DEVIL'S ADVOCATE. Your job is to push back HARD.
-
-REQUIREMENTS:
-1. You MUST explicitly DISAGREE with at least one major point from the other speakers
-2. Identify the weakest assumption in the emerging consensus and attack it
-3. Consider: What would make this advice WRONG? What's the contrarian take?
-4. If everyone is converging too fast, that's a red flag — find the hidden complexity
-
-Don't just "add nuance" or "build on" — find something to genuinely challenge.
-If you can't find real disagreement, say why the consensus might be groupthink."""
-
     first_speaker_with_blind = """You are {name}, speaking first in Round {round_num} of a council deliberation.
 
 You've seen everyone's BLIND CLAIMS (their independent initial positions). Now engage:
@@ -825,16 +832,17 @@ Prioritize PRACTICAL, ACTIONABLE advice over academic observations. Avoid jargon
 
     challenger_addition = """
 
-SPECIAL ROLE: You are the CHALLENGER. Your job is to argue the CONTRARIAN position.
+SPECIAL ROLE: You are the CHALLENGER for this round. Your job is to argue the CONTRARIAN position.
 
 REQUIREMENTS:
 1. You MUST explicitly DISAGREE with at least one major point from the other speakers
 2. Identify the weakest assumption in the emerging consensus and attack it
-3. Consider: What would make this advice WRONG? What's the contrarian take?
-4. If everyone is converging too fast, that's a red flag — find the hidden complexity
+3. Name ONE specific thing that would make the consensus WRONG
+4. You CANNOT use phrases like "building on", "adding nuance", or "I largely agree"
+5. If everyone is converging too fast, that's a red flag — find the hidden complexity
 
-Don't just "add nuance" or "build on" — find something to genuinely challenge.
-If you can't find real disagreement, say why the consensus might be groupthink."""
+Even if you ultimately agree with the direction, you MUST articulate the strongest possible counter-argument.
+If you can't find real disagreement, explain why the consensus might be groupthink."""
 
     for round_num in range(rounds):
         current_round = round_num + 1
@@ -876,10 +884,15 @@ IMPORTANT CONTEXT about the person asking:
 
 Factor this into your advice — don't just give strategically optimal answers, consider what fits THIS person."""
 
-            if idx == advocate_idx and round_num == 0:
-                system_prompt += devils_advocate_addition
-            
-            if idx == challenger_idx and round_num == 0:
+            # Calculate rotating challenger for this round
+            if challenger_idx is not None:
+                # Explicit --challenger sets starting point, then rotates
+                current_challenger = (challenger_idx + round_num) % len(council_config)
+            else:
+                # Default: start with Claude (index 0), rotate through council
+                current_challenger = round_num % len(council_config)
+
+            if idx == current_challenger:
                 system_prompt += challenger_addition
 
             user_content = f"Question for the council:\n\n{question}"
@@ -938,9 +951,11 @@ Factor this into your advice — don't just give strategically optimal answers, 
             if verbose:
                 print()
 
-            output_parts.append(f"### {model_name}\n{response}")
+            challenger_indicator = " (challenger)" if idx == current_challenger else ""
+            output_parts.append(f"### {model_name}{challenger_indicator}\n{response}")
 
-        converged, reason = detect_consensus(conversation, len(council_config))
+        # current_challenger already calculated in the speaker loop above
+        converged, reason = detect_consensus(conversation, council_config, current_challenger)
         if converged:
             if verbose:
                 print(f">>> CONSENSUS DETECTED ({reason}) - proceeding to judge\n")
