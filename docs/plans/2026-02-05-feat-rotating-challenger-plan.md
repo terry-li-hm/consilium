@@ -202,7 +202,7 @@ def run_council(
 ### Non-Functional Requirements
 - [x] No breaking changes to existing scripts (deprecation, not removal)
 - [x] Tests pass for new rotation logic
-- [ ] README updated with new behavior
+- [x] README updated with new behavior
 
 ## Success Metrics
 
