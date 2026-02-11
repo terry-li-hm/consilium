@@ -79,7 +79,7 @@ def query_model(
 ) -> str:
     """Query a model via OpenRouter with retry logic for flaky models."""
     if is_thinking_model(model):
-        max_tokens = max(max_tokens, 4000)
+        max_tokens = max(max_tokens, 2500)
         timeout = max(timeout, 180.0)
 
     if stream and not is_thinking_model(model):
@@ -380,7 +380,7 @@ async def query_model_async(
 ) -> tuple[str, str, str]:
     """Async query for parallel blind phase. Returns (name, model_name, response)."""
     if is_thinking_model(model):
-        max_tokens = max(max_tokens, 2000)
+        max_tokens = max(max_tokens, 1500)
 
     model_name = model.split("/")[-1]
 
@@ -456,6 +456,8 @@ async def run_blind_phase_parallel(
     verbose: bool = True,
     persona: str | None = None,
     domain_context: str = "",
+    practical_mode: bool = False,
+    practical_constraint: str = "",
 ) -> list[tuple[str, str, str]]:
     """Parallel blind first-pass: all models stake claims simultaneously."""
     blind_system = """You are participating in the BLIND PHASE of a council deliberation.
@@ -471,7 +473,7 @@ Provide a CLAIM SKETCH (not a full response):
 Keep it concise (~100 words). The full deliberation comes later.
 Prioritize PRACTICAL, ACTIONABLE advice over academic observations."""
 
-    if practical_mode:
+    if practical_mode and practical_constraint:
         blind_system += practical_constraint
 
     if domain_context:
@@ -796,9 +798,28 @@ def run_council(
     blind_claims = []
     failed_models = []
 
+    practical_constraint = ""
+    if practical_mode:
+        practical_constraint = """
+
+PRACTICAL MODE: Focus on actionable triggers and concrete decision rules.
+- Every claim must end with a specific action or rule ("do X when Y")
+- Avoid cognitive science, philosophy, abstract theory, or speculation about human cognition
+- No "it depends" hedging — commit to a threshold or trigger
+- If you can't make it actionable, skip it"""
+
     if blind:
         blind_claims = asyncio.run(run_blind_phase_parallel(
-            question, council_config, api_key, google_api_key, moonshot_api_key, verbose, persona, domain_context
+            question,
+            council_config,
+            api_key,
+            google_api_key,
+            moonshot_api_key,
+            verbose,
+            persona,
+            domain_context,
+            practical_mode,
+            practical_constraint,
         ))
         for name, model_name, claims in blind_claims:
             if claims.startswith("["):
@@ -845,14 +866,6 @@ SOCIAL CALIBRATION: This is a social/conversational context (interview, networki
 Your output should feel natural in conversation - something you'd actually say over coffee.
 Avoid structured, multi-part diagnostic questions that sound like interrogation.
 Simple and human beats strategic and comprehensive. Optimize for being relatable, not thorough."""
-
-    practical_constraint = """
-
-PRACTICAL MODE: Focus on actionable triggers and concrete decision rules.
-- Every claim must end with a specific action or rule ("do X when Y")
-- Avoid cognitive science, philosophy, abstract theory, or speculation about human cognition
-- No "it depends" hedging — commit to a threshold or trigger
-- If you can't make it actionable, skip it"""
 
     first_speaker_with_blind = """You are {name}, speaking first in Round {round_num} of a council deliberation.
 

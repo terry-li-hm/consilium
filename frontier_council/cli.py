@@ -51,8 +51,8 @@ Examples:
     parser.add_argument(
         "--rounds",
         type=int,
-        default=2,
-        help="Number of deliberation rounds (default: 2, exits early on consensus)",
+        default=1,
+        help="Number of deliberation rounds (default: 1, exits early on consensus)",
     )
     parser.add_argument(
         "--quiet",
