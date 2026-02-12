@@ -1,7 +1,7 @@
 """Unit tests for council.py utility functions."""
 
 import pytest
-from frontier_council.council import (
+from consilium.council import (
     detect_social_context,
     detect_consensus,
     sanitize_speaker_content,

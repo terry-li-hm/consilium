@@ -1,6 +1,8 @@
-# Frontier Council
+# Consilium
 
-Multi-model deliberation for important decisions. 4 frontier LLMs debate a question, then Claude judges and synthesizes.
+Multi-model deliberation CLI. 4 frontier LLMs debate a question, then Claude judges and synthesizes.
+
+> *consilium* (Latin): counsel, deliberation, plan
 
 Inspired by [Andrej Karpathy's LLM Council](https://github.com/karpathy/llm-council), with added blind phase (anti-anchoring), explicit engagement requirements, rotating challenger role, and social calibration mode.
 
@@ -17,12 +19,12 @@ Inspired by [Andrej Karpathy's LLM Council](https://github.com/karpathy/llm-coun
 ## Installation
 
 ```bash
-pip install frontier-council
+pip install consilium
 ```
 
 Or with uv:
 ```bash
-uv tool install frontier-council
+uv tool install consilium
 ```
 
 ## Setup
@@ -42,34 +44,34 @@ export MOONSHOT_API_KEY=sk-...     # Kimi fallback
 
 ```bash
 # Basic question
-frontier-council "Should we use microservices or monolith?"
+consilium "Should we use microservices or monolith?"
 
 # With social calibration (for interview/networking questions)
-frontier-council "What questions should I ask in the interview?" --social
+consilium "What questions should I ask in the interview?" --social
 
 # With persona context
-frontier-council "Should I take the job?" --persona "builder who hates process work"
+consilium "Should I take the job?" --persona "builder who hates process work"
 
 # Multiple rounds
-frontier-council "Architecture decision" --rounds 3
+consilium "Architecture decision" --rounds 3
 
 # Save transcript
-frontier-council "Career question" --output transcript.md
+consilium "Career question" --output transcript.md
 
 # Share via GitHub Gist
-frontier-council "Important decision" --share
+consilium "Important decision" --share
 
 # List past sessions
-frontier-council --sessions
+consilium --sessions
 ```
 
-All sessions are auto-saved to `~/.frontier-council/sessions/` for later review.
+All sessions are auto-saved to `~/.consilium/sessions/` for later review.
 
 ## Options
 
 | Flag | Description |
 |------|-------------|
-| `--rounds N` | Number of deliberation rounds (default: 2, exits early on consensus) |
+| `--rounds N` | Number of deliberation rounds (default: 1, exits early on consensus) |
 | `--output FILE` | Save transcript to file |
 | `--named` | Let models see real names during deliberation (may increase bias) |
 | `--no-blind` | Skip blind first-pass (faster, but first speaker anchors others) |
@@ -80,9 +82,10 @@ All sessions are auto-saved to `~/.frontier-council/sessions/` for later review.
 | `--challenger MODEL` | Which model starts as challenger (gpt/gemini/grok/kimi). Rotates each round. |
 | `--domain DOMAIN` | Regulatory domain context (banking, healthcare, eu, fintech, bio) |
 | `--followup` | Enable interactive drill-down after judge synthesis |
+| `--practical` | Actionable rules only, no philosophy |
 | `--quiet` | Suppress progress output |
 | `--sessions` | List recent saved sessions |
-| `--no-save` | Don't auto-save transcript to ~/.frontier-council/sessions/ |
+| `--no-save` | Don't auto-save transcript to ~/.consilium/sessions/ |
 
 ## How It Works
 
@@ -124,7 +127,7 @@ Skip the council when:
 ## Python API
 
 ```python
-from frontier_council import run_council, COUNCIL
+from consilium import run_council, COUNCIL
 import os
 
 api_key = os.environ["OPENROUTER_API_KEY"]

@@ -692,8 +692,8 @@ def run_followup_discussion(
     verbose: bool = True,
 ) -> str:
     """Run a focused followup discussion on a specific topic with 2 models. Returns the followup transcript."""
-    # Use judge (Claude 0) and one other model (GPT 1) for followup
-    followup_models = council_config[:2]  # Claude and GPT
+    # Use first two council models (GPT and Gemini) for focused followup
+    followup_models = council_config[:2]
     
     followup_transcript_parts = []
     
@@ -1125,7 +1125,7 @@ PRACTICAL MODE: The council was asked for actionable triggers and concrete rules
             models_used=[name for name, _, _ in council_config],
             rounds=current_round if rounds > 0 else 1,
             duration=time.time() - start_time,
-            cost=0.85,
+            cost=round((time.time() - start_time) * 0.01, 2),  # rough estimate: ~$0.01/sec
             api_key=api_key,
         )
         

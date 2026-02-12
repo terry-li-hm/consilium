@@ -1,4 +1,4 @@
-"""CLI entry point for frontier-council."""
+"""CLI entry point for consilium."""
 
 import argparse
 import json
@@ -13,7 +13,7 @@ from pathlib import Path
 
 def get_sessions_dir() -> Path:
     """Get the sessions directory, creating if needed."""
-    sessions_dir = Path.home() / ".frontier-council" / "sessions"
+    sessions_dir = Path.home() / ".consilium" / "sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
     return sessions_dir
 
@@ -40,11 +40,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  frontier-council "Should we use microservices or monolith?"
-  frontier-council "What questions should I ask?" --social
-  frontier-council "Career decision" --persona "builder who hates process work"
-  frontier-council "Architecture choice" --rounds 3 --output transcript.md
-  frontier-council "Decision" --domain banking --followup --output counsel.md
+  consilium "Should we use microservices or monolith?"
+  consilium "What questions should I ask?" --social
+  consilium "Career decision" --persona "builder who hates process work"
+  consilium "Architecture choice" --rounds 3 --output transcript.md
+  consilium "Decision" --domain banking --followup --output counsel.md
         """,
     )
     parser.add_argument("question", nargs="?", help="The question for the council to deliberate")
@@ -98,12 +98,6 @@ Examples:
         help="Context about the person asking (e.g., 'builder who hates process work')",
     )
     parser.add_argument(
-        "--advocate",
-        type=int,
-        choices=[1, 2, 3, 4, 5],
-        help="DEPRECATED: Use --challenger instead. Maps to --challenger by model name.",
-    )
-    parser.add_argument(
         "--domain",
         help="Regulatory domain context (banking, healthcare, eu, fintech, bio)",
     )
@@ -124,7 +118,7 @@ Examples:
     parser.add_argument(
         "--no-save",
         action="store_true",
-        help="Don't auto-save transcript to ~/.frontier-council/sessions/",
+        help="Don't auto-save transcript to ~/.consilium/sessions/",
     )
     parser.add_argument(
         "--sessions",
@@ -183,7 +177,7 @@ Examples:
 
     if not args.quiet and challenger_idx is not None:
         challenger_name = COUNCIL[challenger_idx][0]
-        print(f"(Contrainian challenger: {challenger_name})")
+        print(f"(Contrarian challenger: {challenger_name})")
         print()
 
     # Get API keys
@@ -214,19 +208,6 @@ Examples:
         print()
 
     try:
-        # Handle deprecated --advocate flag
-        if args.advocate:
-            print("Warning: --advocate is deprecated. Use --challenger instead.", file=sys.stderr)
-            model_names = [n for n, _, _ in COUNCIL]
-            mapped_model = model_names[args.advocate - 1].lower()
-            print(f"  Mapping --advocate {args.advocate} to --challenger {mapped_model}", file=sys.stderr)
-            if not args.challenger:
-                args.challenger = mapped_model
-            # Re-resolve challenger_idx after mapping
-            challenger_lower = args.challenger.lower()
-            model_name_map = {n.lower(): i for i, (n, _, _) in enumerate(COUNCIL)}
-            challenger_idx = model_name_map.get(challenger_lower, 0)
-
         if not args.quiet and args.persona:
             print(f"(Persona context: {args.persona})")
             print()
