@@ -76,6 +76,7 @@ def query_model(
     timeout: float = 120.0,
     stream: bool = False,
     retries: int = 2,
+    cost_accumulator: list[float] | None = None,
 ) -> str:
     """Query a model via OpenRouter with retry logic for flaky models."""
     if is_thinking_model(model):
@@ -83,7 +84,7 @@ def query_model(
         timeout = max(timeout, 180.0)
 
     if stream and not is_thinking_model(model):
-        result = query_model_streaming(api_key, model, messages, max_tokens, timeout)
+        result = query_model_streaming(api_key, model, messages, max_tokens, timeout, cost_accumulator=cost_accumulator)
         if not result.startswith("["):
             return result
         print("(Streaming failed, retrying without streaming...)", flush=True)
@@ -136,6 +137,12 @@ def query_model(
 
         if "<think>" in content:
             content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+
+        if cost_accumulator is not None:
+            usage = data.get("usage", {})
+            cost = usage.get("cost")
+            if cost is not None:
+                cost_accumulator.append(float(cost))
 
         return content
 
@@ -290,6 +297,7 @@ def query_model_streaming(
     messages: list[dict],
     max_tokens: int = 1500,
     timeout: float = 120.0,
+    cost_accumulator: list[float] | None = None,
 ) -> str:
     """Query a model with streaming output - prints tokens as they arrive."""
     import json as json_module
@@ -328,6 +336,12 @@ def query_model_streaming(
                             if "error" in data:
                                 error_msg = f"[Error: {data['error'].get('message', data['error'])}]"
                                 break
+
+                            # Final chunk with usage/cost has empty choices
+                            if cost_accumulator is not None and "usage" in data:
+                                cost = data["usage"].get("cost")
+                                if cost is not None:
+                                    cost_accumulator.append(float(cost))
 
                             if "choices" in data and data["choices"]:
                                 delta = data["choices"][0].get("delta", {})
@@ -377,6 +391,7 @@ async def query_model_async(
     moonshot_api_key: str | None = None,
     max_tokens: int = 500,
     retries: int = 2,
+    cost_accumulator: list[float] | None = None,
 ) -> tuple[str, str, str]:
     """Async query for parallel blind phase. Returns (name, model_name, response)."""
     if is_thinking_model(model):
@@ -427,6 +442,12 @@ async def query_model_async(
             if "<think>" in content:
                 content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
 
+            if cost_accumulator is not None:
+                usage = data.get("usage", {})
+                cost = usage.get("cost")
+                if cost is not None:
+                    cost_accumulator.append(float(cost))
+
             return (name, model_name, content)
 
         except (httpx.RequestError, httpx.RemoteProtocolError):
@@ -458,6 +479,7 @@ async def run_blind_phase_parallel(
     domain_context: str = "",
     practical_mode: bool = False,
     practical_constraint: str = "",
+    cost_accumulator: list[float] | None = None,
 ) -> list[tuple[str, str, str]]:
     """Parallel blind first-pass: all models stake claims simultaneously."""
     blind_system = """You are participating in the BLIND PHASE of a council deliberation.
@@ -509,7 +531,8 @@ Factor this into your advice — don't just give strategically optimal answers, 
         tasks = [
             query_model_async(
                 client, model, messages, name, fallback,
-                google_api_key, moonshot_api_key
+                google_api_key, moonshot_api_key,
+                cost_accumulator=cost_accumulator,
             )
             for name, model, fallback in council_config
         ]
@@ -624,6 +647,7 @@ def extract_structured_summary(
     duration: float,
     cost: float,
     api_key: str | None = None,
+    cost_accumulator: list[float] | None = None,
 ) -> dict:
     extracted = {}
 
@@ -634,7 +658,7 @@ def extract_structured_summary(
                 {"role": "system", "content": EXTRACTION_PROMPT},
                 {"role": "user", "content": judge_response},
             ]
-            raw = query_model(api_key, EXTRACTION_MODEL, messages, max_tokens=800, timeout=30.0)
+            raw = query_model(api_key, EXTRACTION_MODEL, messages, max_tokens=800, timeout=30.0, cost_accumulator=cost_accumulator)
             # Strip markdown fences if present
             raw = raw.strip()
             if raw.startswith("```"):
@@ -792,7 +816,8 @@ def run_council(
     """Run the council deliberation. Returns (transcript, failed_models)."""
 
     start_time = time.time()
-    
+    cost_accumulator: list[float] = []
+
     domain_context = DOMAIN_CONTEXTS.get(domain, "") if domain else ""
     council_names = [name for name, _, _ in council_config]
     blind_claims = []
@@ -820,6 +845,7 @@ PRACTICAL MODE: Focus on actionable triggers and concrete decision rules.
             domain_context,
             practical_mode,
             practical_constraint,
+            cost_accumulator=cost_accumulator,
         ))
         for name, model_name, claims in blind_claims:
             if claims.startswith("["):
@@ -992,7 +1018,7 @@ Factor this into your advice — don't just give strategically optimal answers, 
                 if is_thinking_model(model):
                     print("(thinking...)", flush=True)
 
-            response = query_model(api_key, model, messages, stream=verbose)
+            response = query_model(api_key, model, messages, stream=verbose, cost_accumulator=cost_accumulator)
 
             used_fallback = False
             if response.startswith("[") and fallback:
@@ -1111,7 +1137,7 @@ PRACTICAL MODE: The council was asked for actionable triggers and concrete rules
     if verbose:
         print(f"### Judge ({judge_model_name})")
 
-    judge_response = query_model(api_key, JUDGE_MODEL, judge_messages, max_tokens=1200, stream=verbose)
+    judge_response = query_model(api_key, JUDGE_MODEL, judge_messages, max_tokens=1200, stream=verbose, cost_accumulator=cost_accumulator)
 
     if verbose:
         print()
@@ -1125,9 +1151,13 @@ PRACTICAL MODE: The council was asked for actionable triggers and concrete rules
             models_used=[name for name, _, _ in council_config],
             rounds=current_round if rounds > 0 else 1,
             duration=time.time() - start_time,
-            cost=round((time.time() - start_time) * 0.01, 2),  # rough estimate: ~$0.01/sec
+            cost=0.0,  # placeholder — updated below after extraction adds its own cost
             api_key=api_key,
+            cost_accumulator=cost_accumulator,
         )
+        # Update cost with final total (includes extraction call)
+        total_cost = round(sum(cost_accumulator), 4) if cost_accumulator else 0.0
+        structured["meta"]["estimated_cost_usd"] = total_cost
         
         if format == 'json':
             output_parts.append('\n\n---\n\n' + json.dumps(structured, indent=2, ensure_ascii=False))
