@@ -20,7 +20,8 @@ COUNCIL = [
     ("GPT", "openai/gpt-5.2-pro", None),
     ("Gemini", "google/gemini-3-pro-preview", ("google", "gemini-2.5-pro")),
     ("Grok", "x-ai/grok-4", None),
-    ("Kimi", "moonshotai/kimi-k2.5", ("moonshot", "kimi-k2.5")),
+    ("DeepSeek", "deepseek/deepseek-r1", None),
+    ("GLM", "z-ai/glm-5", None),
 ]
 
 # Claude is judge-only (not in council) to avoid conflict of interest
@@ -70,8 +71,8 @@ THINKING_MODEL_SUFFIXES = {
     "gpt-5.2-pro",
     "gemini-3-pro-preview",
     "grok-4",
-    "kimi-k2.5",
     "deepseek-r1",
+    "glm-5",
     "o1-preview", "o1-mini", "o1",
     "o3-preview", "o3-mini", "o3",
 }
