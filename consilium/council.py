@@ -25,6 +25,27 @@ COUNCIL = [
 
 # Claude is judge-only (not in council) to avoid conflict of interest
 JUDGE_MODEL = "anthropic/claude-opus-4.5"
+# Critique model for CollabEval phase 2 (must differ from judge for diversity)
+CRITIQUE_MODEL = "openai/gpt-5.2"
+# Cheap model for difficulty classification (DAAO)
+CLASSIFIER_MODEL = "anthropic/claude-haiku-4-5"
+
+# Quick mode model tiers (parallel queries, no debate)
+QUICK_MODELS = [
+    ("Claude", "anthropic/claude-opus-4.5"),
+    ("GPT", "openai/gpt-5.2"),
+    ("Gemini", "google/gemini-3-pro-preview"),
+    ("Grok", "x-ai/grok-4"),
+    ("DeepSeek", "deepseek/deepseek-r1"),
+]
+
+QUICK_MODELS_CHEAP = [
+    ("Claude", "anthropic/claude-sonnet-4.5"),
+    ("GPT", "openai/gpt-4o"),
+    ("Gemini", "google/gemini-2.0-flash-001"),
+    ("Grok", "x-ai/grok-4.1-fast"),
+    ("DeepSeek", "deepseek/deepseek-v3.2"),
+]
 
 # Domain-specific regulatory contexts
 DOMAIN_CONTEXTS = {
@@ -66,6 +87,33 @@ def detect_social_context(question: str) -> bool:
     """Auto-detect if the question is about social/conversational context."""
     question_lower = question.lower()
     return any(keyword in question_lower for keyword in SOCIAL_KEYWORDS)
+
+
+def classify_difficulty(
+    question: str,
+    api_key: str,
+    cost_accumulator: list[float] | None = None,
+) -> str:
+    """Classify question difficulty for DAAO routing. Returns 'simple', 'moderate', or 'complex'."""
+    messages = [
+        {"role": "system", "content": """Classify this question's deliberation difficulty as exactly one of: simple, moderate, complex.
+
+simple: Factual questions, straightforward comparisons, well-known answers, single-dimension questions
+moderate: Multi-faceted trade-off analysis, technical decisions with 2-3 competing factors, "should I X or Y" choices
+complex: High-stakes decisions with many interacting variables, deeply nuanced strategic/ethical questions, decisions with irreversible consequences
+
+Respond with ONLY the single word: simple, moderate, or complex."""},
+        {"role": "user", "content": question},
+    ]
+    response = query_model(
+        api_key, CLASSIFIER_MODEL, messages,
+        max_tokens=10, timeout=15.0,
+        cost_accumulator=cost_accumulator,
+    )
+    result = response.strip().lower().rstrip(".")
+    if result in ("simple", "moderate", "complex"):
+        return result
+    return "moderate"
 
 
 def query_model(
@@ -468,6 +516,137 @@ async def query_model_async(
     return (name, model_name, f"[No response from {model_name} after {retries + 1} attempts]")
 
 
+async def _run_quick_async(
+    question: str,
+    models: list[tuple[str, str]],
+    api_key: str,
+    verbose: bool = True,
+    cost_accumulator: list[float] | None = None,
+) -> list[tuple[str, str, str]]:
+    """Parallel query all models with no debate protocol. Returns [(name, model_id, response)]."""
+    messages = [{"role": "user", "content": question}]
+
+    async with httpx.AsyncClient(
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=180.0,
+    ) as client:
+        tasks = [
+            query_model_async(
+                client,
+                model_id,
+                messages,
+                name,
+                max_tokens=2000,
+                cost_accumulator=cost_accumulator,
+            )
+            for name, model_id in models
+        ]
+
+        if verbose:
+            print(f"(querying {len(models)} models in parallel...)")
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    out = []
+    for i, result in enumerate(results):
+        name, model_id = models[i]
+        if isinstance(result, Exception):
+            out.append((name, model_id, f"[Error: {result}]"))
+        else:
+            out.append(result)
+    return out
+
+
+def run_quick(
+    question: str,
+    models: list[tuple[str, str]],
+    api_key: str,
+    verbose: bool = True,
+    format: str = "prose",
+) -> str:
+    """Run quick mode: parallel queries, no debate, no judge. Returns formatted transcript."""
+    start_time = time.time()
+    cost_accumulator: list[float] = []
+
+    results = asyncio.run(_run_quick_async(
+        question, models, api_key, verbose, cost_accumulator,
+    ))
+
+    duration = time.time() - start_time
+    total_cost = round(sum(cost_accumulator), 4) if cost_accumulator else 0.0
+
+    if verbose:
+        print()
+
+    failed = []
+    for name, model_id, response in results:
+        model_name = model_id.split("/")[-1]
+        if response.startswith("["):
+            failed.append(f"{model_name}: {response}")
+        elif verbose:
+            print(f"### {model_name}")
+            print(response)
+            print()
+
+    if failed and verbose:
+        print("Failures:")
+        for f in failed:
+            print(f"  - {f}")
+        print()
+
+    if verbose:
+        print(f"({duration:.1f}s, ~${total_cost:.2f})")
+
+    # Build output
+    if format in ("json", "yaml"):
+        tier = "cheap" if models == QUICK_MODELS_CHEAP else "expensive"
+        structured = {
+            "schema_version": "1.0",
+            "question": question,
+            "mode": "quick",
+            "responses": [
+                {
+                    "model": model_id.split("/")[-1],
+                    "provider": model_id.split("/")[0],
+                    "content": response,
+                }
+                for name, model_id, response in results
+                if not response.startswith("[")
+            ],
+            "errors": [
+                {
+                    "model": model_id.split("/")[-1],
+                    "error": response,
+                }
+                for name, model_id, response in results
+                if response.startswith("[")
+            ],
+            "meta": {
+                "timestamp": datetime.now().isoformat(),
+                "models_used": [model_id.split("/")[-1] for _, model_id in models],
+                "duration_seconds": round(duration, 1),
+                "estimated_cost_usd": total_cost,
+                "tier": tier,
+            },
+        }
+        if not structured["errors"]:
+            del structured["errors"]
+        if format == "json":
+            return json.dumps(structured, indent=2, ensure_ascii=False)
+        else:
+            return yaml.dump(structured, allow_unicode=True, default_flow_style=False)
+
+    # Prose format
+    parts = []
+    for name, model_id, response in results:
+        model_name = model_id.split("/")[-1]
+        if response.startswith("["):
+            parts.append(f"### {model_name}\n{response}")
+        else:
+            parts.append(f"### {model_name}\n{response}")
+    return "\n\n".join(parts)
+
+
 async def run_blind_phase_parallel(
     question: str,
     council_config: list[tuple[str, str, tuple[str, str] | None]],
@@ -812,6 +991,7 @@ def run_council(
     domain: str | None = None,
     challenger_idx: int | None = None,  # Starting challenger index, rotates each round
     format: str = "prose",
+    collabeval: bool = True,
 ) -> tuple[str, list[str]]:
     """Run the council deliberation. Returns (transcript, failed_models)."""
 
@@ -927,17 +1107,17 @@ Prioritize PRACTICAL, ACTIONABLE advice over academic observations. Avoid jargon
 
     challenger_addition = """
 
-SPECIAL ROLE: You are the CHALLENGER for this round. Your job is to argue the CONTRARIAN position.
+SPECIAL ROLE: You are the CHALLENGER for this round. Your job is to probe and stress-test the emerging position.
 
 REQUIREMENTS:
-1. You MUST explicitly DISAGREE with at least one major point from the other speakers
-2. Identify the weakest assumption in the emerging consensus and attack it
-3. Name ONE specific thing that would make the consensus WRONG
+1. Frame your objections as QUESTIONS, not statements (e.g., "What happens when X fails?" not "X will fail")
+2. Identify the weakest assumption in the emerging consensus and probe it
+3. Ask ONE question that would make the consensus WRONG if the answer goes a certain way
 4. You CANNOT use phrases like "building on", "adding nuance", or "I largely agree"
 5. If everyone is converging too fast, that's a red flag — find the hidden complexity
 
-Even if you ultimately agree with the direction, you MUST articulate the strongest possible counter-argument.
-If you can't find real disagreement, explain why the consensus might be groupthink."""
+Questions force deeper reasoning than assertions. Probe, don't just oppose.
+If you can't find real disagreement, ask why the consensus formed so quickly."""
 
     for round_num in range(rounds):
         current_round = round_num + 1
@@ -1104,7 +1284,7 @@ Format your response as:
 ## Recommendation
 [Your final recommendation]
 {social_judge_section}
-Be balanced and fair. Acknowledge minority views. But don't be afraid to have your own opinion — you're the judge, not just a summarizer.{" For social contexts, prioritize natural/human output over strategic optimization." if social_mode else ""}
+Be balanced and fair. Acknowledge minority views. But don't be afraid to have your own opinion — you're the judge, not just a summarizer. Critically evaluate each position — don't replicate or parrot the council's language.{" For social contexts, prioritize natural/human output over strategic optimization." if social_mode else ""}
 
 CRITICAL — PRESCRIPTION DISCIPLINE:
 Your job is to FILTER, not aggregate. The council will generate many suggestions. Most are interesting but not necessary.
@@ -1143,6 +1323,57 @@ PRACTICAL MODE: The council was asked for actionable triggers and concrete rules
         print()
 
     output_parts.append(f"### Judge ({judge_model_name})\n{judge_response}")
+
+    # CollabEval Phase 2-3: Critique + Revision (skipped when collabeval=False)
+    if collabeval:
+        critique_model_name = CRITIQUE_MODEL.split("/")[-1]
+        critique_system = f"""You are an independent critic reviewing a judge's synthesis of a multi-model council deliberation.
+
+Your job is to find WEAKNESSES in the judge's synthesis — not to agree with it.
+
+Look for:
+1. Points the judge dismissed too quickly or weighted incorrectly
+2. Minority views that deserved more consideration
+3. Logical gaps or unsupported leaps in the recommendation
+4. Practical concerns the judge missed
+5. Whether the "Do Now" items are truly the right priorities
+
+Be specific and concise. Name the exact weakness and why it matters.
+If the synthesis is genuinely strong, say so briefly — but try hard to find something.{f" Consider the {domain} regulatory context." if domain else ""}"""
+
+        critique_messages = [
+            {"role": "system", "content": critique_system},
+            {"role": "user", "content": f"Question:\n{question}\n\nJudge's Synthesis:\n\n{judge_response}"},
+        ]
+
+        if verbose:
+            print(f"### Critique ({critique_model_name})")
+
+        critique_response = query_model(api_key, CRITIQUE_MODEL, critique_messages, max_tokens=800, stream=verbose, cost_accumulator=cost_accumulator)
+
+        if verbose:
+            print()
+
+        output_parts.append(f"### Critique ({critique_model_name})\n{critique_response}")
+
+        # CollabEval Phase 3: Judge revision
+        if verbose:
+            print(f"### Final Synthesis ({judge_model_name})")
+
+        revision_messages = judge_messages + [
+            {"role": "assistant", "content": judge_response},
+            {"role": "user", "content": f"An independent critic has reviewed your synthesis:\n\n{critique_response}\n\nRevise your synthesis considering this critique. Keep what's right, fix what's wrong. If the critique raises valid points, integrate them. If not, explain briefly why you stand by your original position. Output your FINAL revised synthesis in the same format."},
+        ]
+
+        final_response = query_model(api_key, JUDGE_MODEL, revision_messages, max_tokens=1200, stream=verbose, cost_accumulator=cost_accumulator)
+
+        if verbose:
+            print()
+
+        output_parts.append(f"### Final Synthesis ({judge_model_name})\n{final_response}")
+
+        # Use the final revised synthesis for structured extraction
+        judge_response = final_response
 
     if format != 'prose':
         structured = extract_structured_summary(
