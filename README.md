@@ -14,7 +14,7 @@ Inspired by [Andrej Karpathy's LLM Council](https://github.com/karpathy/llm-coun
 - Grok (grok-4)
 - Kimi (kimi-k2.5)
 
-**Judge:** Claude Opus 4.5 (synthesizes + adds own perspective)
+**Judge:** Claude Opus 4.6 (synthesizes + adds own perspective)
 
 ## Installation
 

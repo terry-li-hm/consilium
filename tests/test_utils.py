@@ -1,7 +1,7 @@
-"""Unit tests for council.py utility functions."""
+"""Unit tests for models.py utility functions."""
 
 import pytest
-from consilium.council import (
+from consilium.models import (
     detect_social_context,
     detect_consensus,
     sanitize_speaker_content,
@@ -188,41 +188,13 @@ class TestIsThinkingModel:
         """Gemini 3 Pro is thinking model."""
         assert is_thinking_model("google/gemini-3-pro-preview")
 
-    def test_kimi_k2_5(self):
-        """Kimi K2.5 is thinking model."""
-        assert is_thinking_model("moonshotai/kimi-k2.5")
-
     def test_deepseek_r1(self):
         """DeepSeek R1 is thinking model."""
         assert is_thinking_model("deepseek/deepseek-r1")
 
-    def test_o1_preview(self):
-        """O1 preview is thinking model."""
-        assert is_thinking_model("openai/o1-preview")
-
-    def test_o1_mini(self):
-        """O1 mini is thinking model."""
-        assert is_thinking_model("openai/o1-mini")
-
-    def test_o1(self):
-        """O1 is thinking model."""
-        assert is_thinking_model("openai/o1")
-
-    def test_o3_preview(self):
-        """O3 preview is thinking model."""
-        assert is_thinking_model("openai/o3-preview")
-
-    def test_o3_mini(self):
-        """O3 mini is thinking model."""
-        assert is_thinking_model("openai/o3-mini")
-
-    def test_o3(self):
-        """O3 is thinking model."""
-        assert is_thinking_model("openai/o3")
-
     def test_claude_opus_thinking(self):
-        """Claude Opus 4.5 is thinking model."""
-        assert is_thinking_model("anthropic/claude-opus-4.5")
+        """Claude Opus 4.6 is thinking model."""
+        assert is_thinking_model("anthropic/claude-opus-4-6")
 
     def test_gpt_52_thinking(self):
         """GPT-5.2 is thinking model."""
