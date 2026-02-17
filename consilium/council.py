@@ -195,6 +195,7 @@ def run_council(
     challenger_idx: int | None = None,
     format: str = "prose",
     collabeval: bool = True,
+    judge: bool = True,
 ) -> SessionResult:
     """Run the council deliberation. Returns SessionResult."""
 
@@ -400,23 +401,59 @@ Factor this into your advice — don't just give strategically optimal answers, 
         if drift_parts:
             output_parts.append(f"Confidence drift: {', '.join(drift_parts)}")
 
-    # Judge synthesis
-    context_hint = ""
-    if context:
-        context_hint = f"\n\nContext about this question: {context}\nConsider this context when weighing perspectives and forming recommendations."
+    deliberation_text = "\n\n".join(
+        f"**{display_names[speaker]}**: {sanitize_speaker_content(text)}" for speaker, text in conversation
+    )
 
-    domain_hint = ""
-    if domain_context:
-        domain_hint = f"\n\nDOMAIN CONTEXT: {domain}\nConsider this regulatory domain context when weighing perspectives and forming recommendations."
+    if not judge:
+        # External judge mode: emit debate transcript + metadata, skip synthesis
+        if verbose:
+            print("(judge=False — skipping synthesis for external judge)")
+            print()
 
-    social_judge_section = ""
-    if social_mode:
-        social_judge_section = """
+        output_parts.append(f"## Council Deliberation Transcript\n\n{deliberation_text}")
+
+        duration = time.time() - start_time
+        total_cost = round(sum(cost_accumulator), 4) if cost_accumulator else 0.0
+        meta = {
+            "judge": "external",
+            "question": question,
+            "models_used": [name for name, _, _ in council_config],
+            "rounds": current_round if rounds > 0 else 1,
+            "duration_seconds": round(duration, 1),
+            "estimated_cost_usd": total_cost,
+        }
+        if context:
+            meta["context"] = context
+        if domain:
+            meta["domain"] = domain
+        if persona:
+            meta["persona"] = persona
+        if social_mode:
+            meta["social_mode"] = True
+        if practical_mode:
+            meta["practical_mode"] = True
+
+        output_parts.append('\n\n---\n\n' + json.dumps(meta, indent=2, ensure_ascii=False))
+
+    else:
+        # Internal judge synthesis
+        context_hint = ""
+        if context:
+            context_hint = f"\n\nContext about this question: {context}\nConsider this context when weighing perspectives and forming recommendations."
+
+        domain_hint = ""
+        if domain_context:
+            domain_hint = f"\n\nDOMAIN CONTEXT: {domain}\nConsider this regulatory domain context when weighing perspectives and forming recommendations."
+
+        social_judge_section = ""
+        if social_mode:
+            social_judge_section = """
 
 ## Social Calibration Check
 [Would the recommendation feel natural in conversation? Is it something you'd actually say, or does it sound like strategic over-optimization? If the council produced something too formal/structured, suggest a simpler, more human alternative.]"""
 
-    judge_system = f"""You are the Judge (Claude), responsible for synthesizing the council's deliberation.{context_hint}{domain_hint}
+        judge_system = f"""You are the Judge (Claude), responsible for synthesizing the council's deliberation.{context_hint}{domain_hint}
 
 You did NOT participate in the deliberation — you're seeing it fresh. This gives you objectivity.
 
@@ -459,36 +496,32 @@ The council's gravitational pull is toward "add more." Your gravitational pull m
 
 Don't recommend building infrastructure for problems that don't exist yet."""
 
-    if practical_mode:
-        judge_system += """
+        if practical_mode:
+            judge_system += """
 
 PRACTICAL MODE: The council was asked for actionable triggers and concrete rules. Filter aggressively — drop any recommendation that is philosophical, abstract, or not immediately actionable. Every Do Now item must be a specific rule or trigger, not a habit or mindset shift."""
 
-    deliberation_text = "\n\n".join(
-        f"**{display_names[speaker]}**: {sanitize_speaker_content(text)}" for speaker, text in conversation
-    )
+        judge_messages = [
+            {"role": "system", "content": judge_system},
+            {"role": "user", "content": f"Question:\n{question}\n\n---\n\nCouncil Deliberation:\n\n{deliberation_text}"},
+        ]
 
-    judge_messages = [
-        {"role": "system", "content": judge_system},
-        {"role": "user", "content": f"Question:\n{question}\n\n---\n\nCouncil Deliberation:\n\n{deliberation_text}"},
-    ]
+        judge_model_name = JUDGE_MODEL.split("/")[-1]
 
-    judge_model_name = JUDGE_MODEL.split("/")[-1]
+        if verbose:
+            print(f"### Judge ({judge_model_name})")
 
-    if verbose:
-        print(f"### Judge ({judge_model_name})")
+        judge_response = query_model(api_key, JUDGE_MODEL, judge_messages, max_tokens=1200, stream=verbose, cost_accumulator=cost_accumulator)
 
-    judge_response = query_model(api_key, JUDGE_MODEL, judge_messages, max_tokens=1200, stream=verbose, cost_accumulator=cost_accumulator)
+        if verbose:
+            print()
 
-    if verbose:
-        print()
+        output_parts.append(f"### Judge ({judge_model_name})\n{judge_response}")
 
-    output_parts.append(f"### Judge ({judge_model_name})\n{judge_response}")
-
-    # CollabEval Phase 2-3: Critique + Revision (skipped when collabeval=False)
-    if collabeval:
-        critique_model_name = CRITIQUE_MODEL.split("/")[-1]
-        critique_system = f"""You are an independent critic reviewing a judge's synthesis of a multi-model council deliberation.
+        # CollabEval Phase 2-3: Critique + Revision (skipped when collabeval=False)
+        if collabeval:
+            critique_model_name = CRITIQUE_MODEL.split("/")[-1]
+            critique_system = f"""You are an independent critic reviewing a judge's synthesis of a multi-model council deliberation.
 
 Your job is to find WEAKNESSES in the judge's synthesis — not to agree with it.
 
@@ -502,58 +535,58 @@ Look for:
 Be specific and concise. Name the exact weakness and why it matters.
 If the synthesis is genuinely strong, say so briefly — but try hard to find something.{f" Consider the {domain} regulatory context." if domain else ""}"""
 
-        critique_messages = [
-            {"role": "system", "content": critique_system},
-            {"role": "user", "content": f"Question:\n{question}\n\nJudge's Synthesis:\n\n{judge_response}"},
-        ]
+            critique_messages = [
+                {"role": "system", "content": critique_system},
+                {"role": "user", "content": f"Question:\n{question}\n\nJudge's Synthesis:\n\n{judge_response}"},
+            ]
 
-        if verbose:
-            print(f"### Critique ({critique_model_name})")
+            if verbose:
+                print(f"### Critique ({critique_model_name})")
 
-        critique_response = query_model(api_key, CRITIQUE_MODEL, critique_messages, max_tokens=800, stream=verbose, cost_accumulator=cost_accumulator)
+            critique_response = query_model(api_key, CRITIQUE_MODEL, critique_messages, max_tokens=800, stream=verbose, cost_accumulator=cost_accumulator)
 
-        if verbose:
-            print()
+            if verbose:
+                print()
 
-        output_parts.append(f"### Critique ({critique_model_name})\n{critique_response}")
+            output_parts.append(f"### Critique ({critique_model_name})\n{critique_response}")
 
-        # CollabEval Phase 3: Judge revision
-        if verbose:
-            print(f"### Final Synthesis ({judge_model_name})")
+            # CollabEval Phase 3: Judge revision
+            if verbose:
+                print(f"### Final Synthesis ({judge_model_name})")
 
-        revision_messages = judge_messages + [
-            {"role": "assistant", "content": judge_response},
-            {"role": "user", "content": f"An independent critic has reviewed your synthesis:\n\n{critique_response}\n\nRevise your synthesis considering this critique. Keep what's right, fix what's wrong. If the critique raises valid points, integrate them. If not, explain briefly why you stand by your original position. Output your FINAL revised synthesis in the same format."},
-        ]
+            revision_messages = judge_messages + [
+                {"role": "assistant", "content": judge_response},
+                {"role": "user", "content": f"An independent critic has reviewed your synthesis:\n\n{critique_response}\n\nRevise your synthesis considering this critique. Keep what's right, fix what's wrong. If the critique raises valid points, integrate them. If not, explain briefly why you stand by your original position. Output your FINAL revised synthesis in the same format."},
+            ]
 
-        final_response = query_model(api_key, JUDGE_MODEL, revision_messages, max_tokens=1200, stream=verbose, cost_accumulator=cost_accumulator)
+            final_response = query_model(api_key, JUDGE_MODEL, revision_messages, max_tokens=1200, stream=verbose, cost_accumulator=cost_accumulator)
 
-        if verbose:
-            print()
+            if verbose:
+                print()
 
-        output_parts.append(f"### Final Synthesis ({judge_model_name})\n{final_response}")
+            output_parts.append(f"### Final Synthesis ({judge_model_name})\n{final_response}")
 
-        # Use the final revised synthesis for structured extraction
-        judge_response = final_response
+            # Use the final revised synthesis for structured extraction
+            judge_response = final_response
 
-    if format != 'prose':
-        structured = extract_structured_summary(
-            judge_response=judge_response,
-            question=question,
-            models_used=[name for name, _, _ in council_config],
-            rounds=current_round if rounds > 0 else 1,
-            duration=time.time() - start_time,
-            cost=0.0,
-            api_key=api_key,
-            cost_accumulator=cost_accumulator,
-        )
-        total_cost = round(sum(cost_accumulator), 4) if cost_accumulator else 0.0
-        structured["meta"]["estimated_cost_usd"] = total_cost
+        if format != 'prose':
+            structured = extract_structured_summary(
+                judge_response=judge_response,
+                question=question,
+                models_used=[name for name, _, _ in council_config],
+                rounds=current_round if rounds > 0 else 1,
+                duration=time.time() - start_time,
+                cost=0.0,
+                api_key=api_key,
+                cost_accumulator=cost_accumulator,
+            )
+            total_cost = round(sum(cost_accumulator), 4) if cost_accumulator else 0.0
+            structured["meta"]["estimated_cost_usd"] = total_cost
 
-        if format == 'json':
-            output_parts.append('\n\n---\n\n' + json.dumps(structured, indent=2, ensure_ascii=False))
-        else:
-            output_parts.append('\n\n---\n\n' + yaml.dump(structured, allow_unicode=True, default_flow_style=False))
+            if format == 'json':
+                output_parts.append('\n\n---\n\n' + json.dumps(structured, indent=2, ensure_ascii=False))
+            else:
+                output_parts.append('\n\n---\n\n' + yaml.dump(structured, allow_unicode=True, default_flow_style=False))
 
     if anonymous:
         final_output = "\n\n".join(output_parts)

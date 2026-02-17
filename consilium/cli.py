@@ -250,9 +250,11 @@ Session management:
     parser.add_argument("--list-roles", action="store_true", help="List available predefined roles")
     parser.add_argument("--stats", action="store_true", help="Show session analytics")
     parser.add_argument("--sessions", action="store_true", help="List recent sessions")
-    parser.add_argument("--watch", action="store_true", help="Watch live council output (tail -F)")
+    parser.add_argument("--watch", action="store_true", help="Watch live council output (rich formatted)")
     parser.add_argument("--view", nargs="?", const="latest", default=None, metavar="TERM", help="View a session in pager")
     parser.add_argument("--search", metavar="TERM", help="Search session content")
+    parser.add_argument("--no-judge", action="store_true",
+                        help="Skip judge synthesis (for external judge integration)")
     args = parser.parse_args()
 
     # Handle --sessions
@@ -282,6 +284,8 @@ Session management:
 
     # Handle --watch
     if args.watch:
+        from .watch import watch_live
+
         live_link = get_sessions_dir().parent / "live.md"
         # Check for active session: live-*.md files indicate a running council
         live_dir = get_sessions_dir().parent
@@ -291,9 +295,7 @@ Session management:
             if live_link.is_symlink():
                 live_link.unlink(missing_ok=True)
             print("(no active session — waiting for next council...)", file=sys.stderr, flush=True)
-        # Ensure file exists so tail doesn't error, then follow by name
-        live_link.touch(exist_ok=True)
-        os.execvp("tail", ["tail", "-F", str(live_link)])
+        watch_live(live_link)
 
     # Handle --view
     if args.view is not None:
@@ -707,6 +709,7 @@ Session management:
             challenger_idx=challenger_idx,
             format=args.output_format,
             collabeval=use_collabeval,
+            judge=not args.no_judge,
         )
 
         transcript = result.transcript
@@ -731,7 +734,7 @@ Session management:
                 )
                 transcript += "\n\n" + followup_transcript
 
-        mode_label = f"anonymous, blind{', social' if social_mode else ''}{f', auto ({difficulty})' if difficulty else ''}{', collabeval' if use_collabeval else ''}"
+        mode_label = f"anonymous, blind{', social' if social_mode else ''}{f', auto ({difficulty})' if difficulty else ''}{', collabeval' if use_collabeval else ''}{', no-judge' if args.no_judge else ''}"
         header_lines = f"**Mode:** {mode_label}"
         if args.context:
             header_lines += f"\n**Context:** {args.context}"
@@ -742,6 +745,7 @@ Session management:
             "context": args.context,
             "models": [name for name, _, _ in COUNCIL],
             "collabeval": use_collabeval,
+            "judge": "external" if args.no_judge else "internal",
         }
         if difficulty:
             history_extra["difficulty"] = difficulty
