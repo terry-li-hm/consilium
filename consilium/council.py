@@ -11,11 +11,9 @@ from pathlib import Path
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 GOOGLE_AI_STUDIO_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-MOONSHOT_URL = "https://api.moonshot.cn/v1/chat/completions"
 
-# Model configurations (all via OpenRouter, with fallbacks where available)
+# Model configurations (all via OpenRouter, with Google AI Studio fallback for Gemini)
 # Format: (name, openrouter_model, fallback) - fallback is (provider, model) or None
-# Providers: "google" = AI Studio, "moonshot" = Moonshot API
 COUNCIL = [
     ("GPT", "openai/gpt-5.2-pro", None),
     ("Gemini", "google/gemini-3-pro-preview", ("google", "gemini-2.5-pro")),
@@ -31,14 +29,8 @@ CRITIQUE_MODEL = "openai/gpt-5.2"
 # Cheap model for difficulty classification (DAAO)
 CLASSIFIER_MODEL = "anthropic/claude-haiku-4-5"
 
-# Quick mode model tiers (parallel queries, no debate)
-QUICK_MODELS = [
-    ("Claude", "anthropic/claude-opus-4.5"),
-    ("GPT", "openai/gpt-5.2"),
-    ("Gemini", "google/gemini-3-pro-preview"),
-    ("Grok", "x-ai/grok-4"),
-    ("DeepSeek", "deepseek/deepseek-r1"),
-]
+# Quick mode: council models + Claude (no judge conflict in quick mode)
+QUICK_MODELS = [("Claude", JUDGE_MODEL)] + [(n, m) for n, m, _ in COUNCIL]
 
 QUICK_MODELS_CHEAP = [
     ("Claude", "anthropic/claude-sonnet-4.5"),
@@ -46,6 +38,7 @@ QUICK_MODELS_CHEAP = [
     ("Gemini", "google/gemini-2.0-flash-001"),
     ("Grok", "x-ai/grok-4.1-fast"),
     ("DeepSeek", "deepseek/deepseek-v3.2"),
+    ("GLM", "z-ai/glm-5"),
 ]
 
 # Domain-specific regulatory contexts
@@ -68,13 +61,11 @@ SOCIAL_KEYWORDS = [
 # Thinking models - use non-streaming, higher tokens, longer timeout
 THINKING_MODEL_SUFFIXES = {
     "claude-opus-4.5",
-    "gpt-5.2-pro",
+    "gpt-5.2-pro", "gpt-5.2",
     "gemini-3-pro-preview",
     "grok-4",
     "deepseek-r1",
     "glm-5",
-    "o1-preview", "o1-mini", "o1",
-    "o3-preview", "o3-mini", "o3",
 }
 
 
@@ -285,66 +276,6 @@ def query_google_ai_studio(
     return f"[Error: Failed to get response from AI Studio {model}]"
 
 
-def query_moonshot(
-    api_key: str,
-    model: str,
-    messages: list[dict],
-    max_tokens: int = 8192,
-    timeout: float = 120.0,
-    retries: int = 2,
-) -> str:
-    """Query Moonshot API directly (fallback for Kimi models)."""
-    for attempt in range(retries + 1):
-        try:
-            response = httpx.post(
-                MOONSHOT_URL,
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "max_tokens": max_tokens,
-                },
-                timeout=timeout,
-            )
-
-            if response.status_code != 200:
-                if attempt < retries:
-                    continue
-                return f"[Error: HTTP {response.status_code} from Moonshot {model}]"
-
-            data = response.json()
-
-            if "error" in data:
-                if attempt < retries:
-                    continue
-                return f"[Error: {data['error'].get('message', data['error'])}]"
-
-            if "choices" not in data or not data["choices"]:
-                if attempt < retries:
-                    continue
-                return f"[Error: No response from Moonshot {model}]"
-
-            content = data["choices"][0]["message"]["content"]
-
-            if not content or not content.strip():
-                if attempt < retries:
-                    continue
-                return f"[No response from Moonshot {model} after {retries + 1} attempts]"
-
-            return content
-
-        except httpx.TimeoutException:
-            if attempt < retries:
-                continue
-            return f"[Error: Timeout from Moonshot {model}]"
-        except httpx.RequestError as e:
-            if attempt < retries:
-                continue
-            return f"[Error: Request failed for Moonshot {model}: {e}]"
-
-    return f"[Error: Failed to get response from Moonshot {model}]"
-
-
 def query_model_streaming(
     api_key: str,
     model: str,
@@ -442,7 +373,6 @@ async def query_model_async(
     name: str,
     fallback: tuple[str, str] | None = None,
     google_api_key: str | None = None,
-    moonshot_api_key: str | None = None,
     max_tokens: int = 500,
     retries: int = 2,
     cost_accumulator: list[float] | None = None,
@@ -509,14 +439,11 @@ async def query_model_async(
                 continue
             break
 
-    # Try fallbacks synchronously
+    # Try fallback (Google AI Studio)
     if fallback:
         fallback_provider, fallback_model = fallback
         if fallback_provider == "google" and google_api_key:
             response = query_google_ai_studio(google_api_key, fallback_model, messages, max_tokens=max_tokens)
-            return (name, fallback_model, response)
-        elif fallback_provider == "moonshot" and moonshot_api_key:
-            response = query_moonshot(moonshot_api_key, fallback_model, messages, max_tokens=max_tokens)
             return (name, fallback_model, response)
 
     return (name, model_name, f"[No response from {model_name} after {retries + 1} attempts]")
@@ -658,7 +585,6 @@ async def run_blind_phase_parallel(
     council_config: list[tuple[str, str, tuple[str, str] | None]],
     api_key: str,
     google_api_key: str | None = None,
-    moonshot_api_key: str | None = None,
     verbose: bool = True,
     persona: str | None = None,
     domain_context: str = "",
@@ -716,7 +642,7 @@ Factor this into your advice — don't just give strategically optimal answers, 
         tasks = [
             query_model_async(
                 client, model, messages, name, fallback,
-                google_api_key, moonshot_api_key,
+                google_api_key,
                 cost_accumulator=cost_accumulator,
             )
             for name, model, fallback in council_config
@@ -985,7 +911,6 @@ def run_council(
     council_config: list[tuple[str, str, tuple[str, str] | None]],
     api_key: str,
     google_api_key: str | None = None,
-    moonshot_api_key: str | None = None,
     rounds: int = 1,
     verbose: bool = True,
     anonymous: bool = True,
@@ -1025,7 +950,6 @@ PRACTICAL MODE: Focus on actionable triggers and concrete decision rules.
             council_config,
             api_key,
             google_api_key,
-            moonshot_api_key,
             verbose,
             persona,
             domain_context,
@@ -1214,13 +1138,6 @@ Factor this into your advice — don't just give strategically optimal answers, 
                     if verbose:
                         print(f"(OpenRouter failed, trying AI Studio fallback: {fallback_model}...)", flush=True)
                     response = query_google_ai_studio(google_api_key, fallback_model, messages)
-                    used_fallback = True
-                    model_name = fallback_model
-
-                elif fallback_provider == "moonshot" and moonshot_api_key:
-                    if verbose:
-                        print(f"(OpenRouter failed, trying Moonshot fallback: {fallback_model}...)", flush=True)
-                    response = query_moonshot(moonshot_api_key, fallback_model, messages)
                     used_fallback = True
                     model_name = fallback_model
 

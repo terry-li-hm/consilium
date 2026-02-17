@@ -91,7 +91,7 @@ Auto-route by difficulty (simple→quick, moderate→council, complex→council+
     )
     parser.add_argument(
         "--challenger",
-        help="Which model should argue contrarian (gpt, gemini, grok, kimi). Default: gpt",
+        help="Which model should argue contrarian (gpt, gemini, grok, deepseek, glm). Default: gpt",
     )
     parser.add_argument(
         "--followup",
@@ -197,7 +197,6 @@ Auto-route by difficulty (simple→quick, moderate→council, complex→council+
         sys.exit(1)
 
     google_api_key = os.environ.get("GOOGLE_API_KEY")
-    moonshot_api_key = os.environ.get("MOONSHOT_API_KEY")
 
     # Auto mode: classify difficulty and route
     difficulty = None
@@ -317,13 +316,8 @@ Auto-route by difficulty (simple→quick, moderate→council, complex→council+
         if social_mode:
             mode_parts.append("social")
         print(f"Running LLM Council ({', '.join(mode_parts)})...")
-        fallbacks = []
         if google_api_key:
-            fallbacks.append("Gemini→AI Studio")
-        if moonshot_api_key:
-            fallbacks.append("Kimi→Moonshot")
-        if fallbacks:
-            print(f"(Fallbacks enabled: {', '.join(fallbacks)})")
+            print("(Fallback enabled: Gemini→AI Studio)")
         print()
 
     try:
@@ -346,7 +340,6 @@ Auto-route by difficulty (simple→quick, moderate→council, complex→council+
             council_config=COUNCIL,
             api_key=api_key,
             google_api_key=google_api_key,
-            moonshot_api_key=moonshot_api_key,
             rounds=1,
             verbose=not args.quiet,
             anonymous=True,
