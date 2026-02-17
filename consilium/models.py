@@ -33,8 +33,8 @@ COUNCIL = [
 JUDGE_MODEL = "anthropic/claude-opus-4-6"
 # Critique model for CollabEval phase 2 (strongest analytical reasoner, not Claude)
 CRITIQUE_MODEL = "google/gemini-3-pro-preview"
-# Classification model for auto-routing — Haiku is fast (~0.5s) and accurate enough for 3-class
-CLASSIFIER_MODEL = "anthropic/claude-haiku-4-5"
+# Classification model for auto-routing — Opus for accuracy since this gates mode selection
+CLASSIFIER_MODEL = JUDGE_MODEL
 
 # Quick mode: council models + Claude (no judge conflict in quick mode)
 QUICK_MODELS = [("Claude", JUDGE_MODEL, None)] + [(n, m, fb) for n, m, fb in COUNCIL]
