@@ -283,12 +283,16 @@ Session management:
     # Handle --watch
     if args.watch:
         live_link = get_sessions_dir().parent / "live.md"
-        # Clean up stale symlink pointing to non-existent file
-        if live_link.is_symlink() and not live_link.exists():
-            live_link.unlink()
-        if not live_link.exists() and not live_link.is_symlink():
-            live_link.touch()
-            print("(no active session — waiting for output...)", file=sys.stderr, flush=True)
+        # Check for active session: live-*.md files indicate a running council
+        live_dir = get_sessions_dir().parent
+        active_files = list(live_dir.glob("live-*.md"))
+        if not active_files:
+            # Clean up stale symlink
+            if live_link.is_symlink():
+                live_link.unlink(missing_ok=True)
+            print("(no active session — waiting for next council...)", file=sys.stderr, flush=True)
+        # Ensure file exists so tail doesn't error, then follow by name
+        live_link.touch(exist_ok=True)
         os.execvp("tail", ["tail", "-F", str(live_link)])
 
     # Handle --view
