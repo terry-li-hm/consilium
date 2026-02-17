@@ -163,6 +163,24 @@ def _log_history(
         f.write(json.dumps(log_entry) + "\n")
 
 
+def _finish_session(
+    args,
+    question: str,
+    result,
+    mode: str,
+    header_extra: str = "",
+    history_extra: dict | None = None,
+) -> None:
+    """Post-run ceremony: save session, share gist, log history, exit."""
+    session_path = _save_session(question, result.transcript, mode,
+        header_extra=header_extra,
+        no_save=args.no_save, output=args.output, quiet=args.quiet)
+    gist_url = _share_gist(question, result.transcript, mode) if args.share else None
+    _log_history(question, mode, session_path, gist_url, history_extra,
+        cost=result.cost, duration=result.duration)
+    sys.exit(0)
+
+
 def main():
     from .models import (
         COUNCIL,
@@ -510,14 +528,9 @@ Session management:
                 format=args.output_format,
             )
 
-            session_path = _save_session(args.question, result.transcript, "quick",
+            _finish_session(args, args.question, result, "quick",
                 header_extra=f"**Models:** {', '.join(m.split('/')[-1] for _, m, _ in QUICK_MODELS)}",
-                no_save=args.no_save, output=args.output, quiet=args.quiet)
-            gist_url = _share_gist(args.question, result.transcript, "quick") if args.share else None
-            _log_history(args.question, "quick", session_path, gist_url,
-                {"models": [m.split("/")[-1] for _, m, _ in QUICK_MODELS]},
-                cost=result.cost, duration=result.duration)
-            sys.exit(0)
+                history_extra={"models": [m.split("/")[-1] for _, m, _ in QUICK_MODELS]})
 
         # Discussion mode
         if args.discuss:
@@ -542,14 +555,9 @@ Session management:
                 rounds=discuss_rounds,
             )
 
-            session_path = _save_session(args.question, result.transcript, "discuss",
+            _finish_session(args, args.question, result, "discuss",
                 header_extra=f"**Panelists:** {', '.join(name for name, _, _ in DISCUSS_MODELS)}",
-                no_save=args.no_save, output=args.output, quiet=args.quiet)
-            gist_url = _share_gist(args.question, result.transcript, "discuss") if args.share else None
-            _log_history(args.question, "discuss", session_path, gist_url,
-                {"models": [name for name, _, _ in DISCUSS_MODELS]},
-                cost=result.cost, duration=result.duration)
-            sys.exit(0)
+                history_extra={"models": [name for name, _, _ in DISCUSS_MODELS]})
 
         # Red team mode
         if args.redteam:
@@ -571,14 +579,9 @@ Session management:
                 domain=domain_context,
             )
 
-            session_path = _save_session(args.question, result.transcript, "redteam",
+            _finish_session(args, args.question, result, "redteam",
                 header_extra=f"**Attackers:** {', '.join(name for name, _, _ in REDTEAM_MODELS)}",
-                no_save=args.no_save, output=args.output, quiet=args.quiet)
-            gist_url = _share_gist(args.question, result.transcript, "redteam") if args.share else None
-            _log_history(args.question, "redteam", session_path, gist_url,
-                {"models": [name for name, _, _ in REDTEAM_MODELS]},
-                cost=result.cost, duration=result.duration)
-            sys.exit(0)
+                history_extra={"models": [name for name, _, _ in REDTEAM_MODELS]})
 
         # Socratic mode (probing questions, via discuss engine)
         if args.socratic:
@@ -604,14 +607,9 @@ Session management:
                 style="socratic",
             )
 
-            session_path = _save_session(args.question, result.transcript, "socratic",
+            _finish_session(args, args.question, result, "socratic",
                 header_extra=f"**Panelists:** {', '.join(name for name, _, _ in DISCUSS_MODELS)}",
-                no_save=args.no_save, output=args.output, quiet=args.quiet)
-            gist_url = _share_gist(args.question, result.transcript, "socratic") if args.share else None
-            _log_history(args.question, "socratic", session_path, gist_url,
-                {"models": [name for name, _, _ in DISCUSS_MODELS]},
-                cost=result.cost, duration=result.duration)
-            sys.exit(0)
+                history_extra={"models": [name for name, _, _ in DISCUSS_MODELS]})
 
         # Oxford debate mode
         if args.oxford:
@@ -636,14 +634,9 @@ Session management:
                 motion_override=args.motion,
             )
 
-            session_path = _save_session(args.question, result.transcript, "oxford",
+            _finish_session(args, args.question, result, "oxford",
                 header_extra=f"**Debaters:** {', '.join(name for name, _, _ in OXFORD_MODELS)}",
-                no_save=args.no_save, output=args.output, quiet=args.quiet)
-            gist_url = _share_gist(args.question, result.transcript, "oxford") if args.share else None
-            _log_history(args.question, "oxford", session_path, gist_url,
-                {"models": [name for name, _, _ in OXFORD_MODELS]},
-                cost=result.cost, duration=result.duration)
-            sys.exit(0)
+                history_extra={"models": [name for name, _, _ in OXFORD_MODELS]})
 
         # Solo council mode
         if args.solo:
@@ -670,13 +663,8 @@ Session management:
             )
 
             roles_label = " / ".join(custom_roles) if custom_roles else "Advocate / Skeptic / Pragmatist"
-            session_path = _save_session(args.question, result.transcript, "solo",
-                header_extra=f"**Model:** Claude ({roles_label})",
-                no_save=args.no_save, output=args.output, quiet=args.quiet)
-            gist_url = _share_gist(args.question, result.transcript, "solo") if args.share else None
-            _log_history(args.question, "solo", session_path, gist_url,
-                cost=result.cost, duration=result.duration)
-            sys.exit(0)
+            _finish_session(args, args.question, result, "solo",
+                header_extra=f"**Model:** Claude ({roles_label})")
 
         # Full council mode (explicit --council or auto-routed moderate/complex)
         from .council import run_council, run_followup_discussion
@@ -746,11 +734,6 @@ Session management:
         if args.persona:
             header_lines += f"\n**Persona:** {args.persona}"
 
-        session_path = _save_session(args.question, transcript, "council",
-            header_extra=header_lines,
-            no_save=args.no_save, output=args.output, quiet=args.quiet)
-        gist_url = _share_gist(args.question, transcript, "council") if args.share else None
-
         history_extra = {
             "context": args.context,
             "models": [name for name, _, _ in COUNCIL],
@@ -758,8 +741,12 @@ Session management:
         }
         if difficulty:
             history_extra["difficulty"] = difficulty
-        _log_history(args.question, "council", session_path, gist_url,
-            history_extra, cost=result.cost, duration=result.duration)
+
+        # Council uses transcript (may include followup), not result.transcript directly
+        from .models import SessionResult
+        final_result = SessionResult(transcript, result.cost, result.duration)
+        _finish_session(args, args.question, final_result, "council",
+            header_extra=header_lines, history_extra=history_extra)
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
