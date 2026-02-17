@@ -27,7 +27,6 @@ def slugify(text: str, max_len: int = 40) -> str:
 from .council import (
     COUNCIL,
     QUICK_MODELS,
-    QUICK_MODELS_CHEAP,
     classify_difficulty,
     detect_social_context,
     run_council,
@@ -49,7 +48,6 @@ Examples:
 
 Quick mode (parallel queries, no debate):
   consilium "What are the tradeoffs of SSR vs CSR?" --quick
-  consilium "Summarize this error" --quick --cheap
   consilium "Compare Python and Rust" --quick --format json
 
 Auto-route by difficulty (simple→quick, moderate→council, complex→council+critique):
@@ -109,11 +107,6 @@ Auto-route by difficulty (simple→quick, moderate→council, complex→council+
         help="Quick mode: parallel queries, no debate/judge (like ask-llms)",
     )
     parser.add_argument(
-        "--cheap",
-        action="store_true",
-        help="Use cheaper model tier (only valid with --quick)",
-    )
-    parser.add_argument(
         "--auto",
         action="store_true",
         help="Auto-route based on question difficulty: simple→quick, moderate→council, complex→council+critique",
@@ -144,9 +137,7 @@ Auto-route by difficulty (simple→quick, moderate→council, complex→council+
     if not args.question:
         parser.error("the following arguments are required: question")
 
-    # Validate --quick / --cheap / --auto flags
-    if args.cheap and not args.quick:
-        parser.error("--cheap requires --quick")
+    # Validate --quick / --auto flags
     if args.auto and args.quick:
         parser.error("--auto and --quick are mutually exclusive")
 
@@ -216,11 +207,10 @@ Auto-route by difficulty (simple→quick, moderate→council, complex→council+
 
     # Quick mode: parallel queries, no debate
     if args.quick:
-        models = QUICK_MODELS_CHEAP if args.cheap else QUICK_MODELS
-        tier = "cheap" if args.cheap else "expensive"
+        models = QUICK_MODELS
 
         if not args.quiet:
-            print(f"Running quick council ({tier}, {len(models)} models)...")
+            print(f"Running quick council ({len(models)} models)...")
             print()
 
         try:
@@ -249,7 +239,7 @@ Auto-route by difficulty (simple→quick, moderate→council, complex→council+
 
 **Question:** {args.question}
 **Date:** {datetime.now().strftime("%Y-%m-%d %H:%M")}
-**Mode:** quick, {tier}
+**Mode:** quick
 **Models:** {', '.join(m.split('/')[-1] for _, m in models)}
 
 ---
@@ -294,7 +284,6 @@ Auto-route by difficulty (simple→quick, moderate→council, complex→council+
                 "timestamp": datetime.now().isoformat(),
                 "question": args.question[:200],
                 "mode": "quick",
-                "tier": tier,
                 "session": str(session_path) if session_path else None,
                 "gist": gist_url,
                 "models": [m.split("/")[-1] for _, m in models],

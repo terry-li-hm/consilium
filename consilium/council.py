@@ -24,22 +24,13 @@ COUNCIL = [
 
 # Claude is judge-only (not in council) to avoid conflict of interest
 JUDGE_MODEL = "anthropic/claude-opus-4.5"
-# Critique model for CollabEval phase 2 (must differ from judge for diversity)
-CRITIQUE_MODEL = "openai/gpt-5.2"
+# Critique model for CollabEval phase 2 (strongest analytical reasoner, not Claude)
+CRITIQUE_MODEL = "google/gemini-3-pro-preview"
 # Cheap model for difficulty classification (DAAO)
 CLASSIFIER_MODEL = "anthropic/claude-haiku-4-5"
 
 # Quick mode: council models + Claude (no judge conflict in quick mode)
 QUICK_MODELS = [("Claude", JUDGE_MODEL)] + [(n, m) for n, m, _ in COUNCIL]
-
-QUICK_MODELS_CHEAP = [
-    ("Claude", "anthropic/claude-sonnet-4.5"),
-    ("GPT", "openai/gpt-4o"),
-    ("Gemini", "google/gemini-2.0-flash-001"),
-    ("Grok", "x-ai/grok-4.1-fast"),
-    ("DeepSeek", "deepseek/deepseek-v3.2"),
-    ("GLM", "z-ai/glm-5"),
-]
 
 # Domain-specific regulatory contexts
 DOMAIN_CONTEXTS = {
@@ -532,7 +523,6 @@ def run_quick(
 
     # Build output
     if format in ("json", "yaml"):
-        tier = "cheap" if models == QUICK_MODELS_CHEAP else "expensive"
         structured = {
             "schema_version": "1.0",
             "question": question,
@@ -559,7 +549,6 @@ def run_quick(
                 "models_used": [model_id.split("/")[-1] for _, model_id in models],
                 "duration_seconds": round(duration, 1),
                 "estimated_cost_usd": total_cost,
-                "tier": tier,
             },
         }
         if not structured["errors"]:
