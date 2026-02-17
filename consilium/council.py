@@ -159,7 +159,12 @@ def query_model(
                 continue
             return f"[Error: HTTP {response.status_code} from {model}]"
 
-        data = response.json()
+        try:
+            data = response.json()
+        except (json.JSONDecodeError, ValueError):
+            if attempt < retries:
+                continue
+            return f"[Error: Invalid JSON response from {model}]"
 
         if "error" in data:
             if attempt < retries:
