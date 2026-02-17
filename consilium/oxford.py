@@ -162,9 +162,14 @@ def run_oxford(
                 opp_name, fallback=opp_fallback, google_api_key=google_api_key,
                 max_tokens=800, cost_accumulator=cost_accumulator,
             )
-            return await asyncio.gather(prop_task, opp_task)
+            return await asyncio.gather(prop_task, opp_task, return_exceptions=True)
 
-    (_, _, prop_constructive), (_, _, opp_constructive) = asyncio.run(_run_constructives())
+    results = list(asyncio.run(_run_constructives()))
+    for i, r in enumerate(results):
+        if isinstance(r, Exception):
+            side_name = [prop_name, opp_name][i]
+            results[i] = (side_name, "unknown", f"[Error: {r}]")
+    (_, _, prop_constructive), (_, _, opp_constructive) = results
 
     if verbose:
         print(f"\n### {prop_name} (Proposition)")
@@ -269,9 +274,14 @@ def run_oxford(
                 opp_name, fallback=opp_fallback, google_api_key=google_api_key,
                 max_tokens=400, cost_accumulator=cost_accumulator,
             )
-            return await asyncio.gather(prop_task, opp_task)
+            return await asyncio.gather(prop_task, opp_task, return_exceptions=True)
 
-    (_, _, prop_closing), (_, _, opp_closing) = asyncio.run(_run_closings())
+    results = list(asyncio.run(_run_closings()))
+    for i, r in enumerate(results):
+        if isinstance(r, Exception):
+            side_name = [prop_name, opp_name][i]
+            results[i] = (side_name, "unknown", f"[Error: {r}]")
+    (_, _, prop_closing), (_, _, opp_closing) = results
 
     if verbose:
         print(f"\n### {prop_name} (Proposition closing)")

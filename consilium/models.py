@@ -401,7 +401,12 @@ async def query_model_async(
                     continue
                 break
 
-            data = response.json()
+            try:
+                data = response.json()
+            except (ValueError, json.JSONDecodeError):
+                if attempt < retries:
+                    continue
+                break
 
             if "error" in data:
                 if attempt < retries:
@@ -413,7 +418,12 @@ async def query_model_async(
                     continue
                 break
 
-            content = data["choices"][0]["message"]["content"]
+            try:
+                content = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError):
+                if attempt < retries:
+                    continue
+                break
 
             if not content or not content.strip():
                 reasoning = data["choices"][0]["message"].get("reasoning", "")
