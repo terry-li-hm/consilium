@@ -98,7 +98,6 @@ class ConsiliumTUI(App):
         self.current_target: Path | None = None
         self.fh = None
         self.partial_buf = ""
-        self.flushed_partial = False
         self.prev_type: LineType | None = None
         self.in_failure_block = False
         self.start_time: float | None = None
@@ -106,6 +105,7 @@ class ConsiliumTUI(App):
         self._stats_re = re.compile(r"\([\d.]+s,\s*~?\$([\d.]+)\)")
         self._body_buffer: list[str] = []
         self._in_model_block = False
+        self._session_active = False
 
     def compose(self) -> ComposeResult:
         yield PhaseBar()
@@ -119,8 +119,18 @@ class ConsiliumTUI(App):
         self.set_interval(0.05, self._poll)
         self.set_interval(1.0, self._tick_elapsed)
 
+    def _close_fh(self) -> None:
+        """Close the file handle if open."""
+        if self.fh is not None:
+            self.fh.close()
+            self.fh = None
+
+    def on_unmount(self) -> None:
+        """Clean up file handle on exit."""
+        self._close_fh()
+
     def _tick_elapsed(self) -> None:
-        if self.start_time is not None:
+        if self.start_time is not None and self._session_active:
             self.query_one(PhaseBar).elapsed = time.monotonic() - self.start_time
 
     # ── body buffer ───────────────────────────────────────────────
@@ -156,10 +166,12 @@ class ConsiliumTUI(App):
         if line_type == LineType.PHASE_BANNER:
             bar.phase = stripped
 
-        # Accumulate cost from stats lines
+        # Accumulate cost from stats lines and mark session done
         cost_match = self._stats_re.search(stripped)
         if cost_match:
             bar.cost += float(cost_match.group(1))
+            bar.phase = "done"
+            self._session_active = False
 
         # Flush body buffer on any structural (non-body) line
         is_body = line_type in (LineType.BODY, LineType.CONFIDENCE)
@@ -176,7 +188,10 @@ class ConsiliumTUI(App):
             log.write(t)
 
         elif line_type == LineType.MODEL_HEADER:
-            assert match is not None
+            if match is None:
+                self.prev_type = line_type
+                self.all_text.append(line)
+                return
             raw = match.group(1)
             role_m = re.match(r"^(.+?)\s+\((.+)\)$", raw)
             self._in_model_block = True
@@ -190,11 +205,17 @@ class ConsiliumTUI(App):
             log.write(t)
 
         elif line_type == LineType.SECTION_HEADER:
-            assert match is not None
+            if match is None:
+                self.prev_type = line_type
+                self.all_text.append(line)
+                return
             log.write(Text(match.group(1), style="bold yellow"))
 
         elif line_type == LineType.NOTICE:
-            assert match is not None
+            if match is None:
+                self.prev_type = line_type
+                self.all_text.append(line)
+                return
             log.write(Text(f">>> {match.group(1)}", style="bold magenta"))
 
         elif line_type == LineType.STATUS:
@@ -241,16 +262,14 @@ class ConsiliumTUI(App):
             # Flush any pending body content before closing
             if self._in_model_block:
                 self._flush_body(log)
-            if self.fh is not None:
-                self.fh.close()
-                self.fh = None
-                self.partial_buf = ""
-                self.flushed_partial = False
+            self._close_fh()
+            self.partial_buf = ""
 
             if new_target is not None:
                 self.current_target = new_target
                 self.fh = open(self.current_target, "r")
                 self.start_time = time.monotonic()
+                self._session_active = True
                 bar.phase = "starting\u2026"
                 bar.elapsed = 0.0
                 bar.cost = 0.0
@@ -276,7 +295,6 @@ class ConsiliumTUI(App):
             while "\n" in self.partial_buf:
                 line, self.partial_buf = self.partial_buf.split("\n", 1)
                 self._render_line(line)
-                self.flushed_partial = False
 
             # Update stream preview: show buffer tail + partial during model blocks
             if self._in_model_block and (self._body_buffer or self.partial_buf):
@@ -285,10 +303,8 @@ class ConsiliumTUI(App):
                 if self.partial_buf:
                     preview = f"{preview}\n{self.partial_buf}" if preview else self.partial_buf
                 stream.update(preview)
-                self.flushed_partial = bool(self.partial_buf)
             elif self.partial_buf:
                 stream.update(self.partial_buf)
-                self.flushed_partial = True
             else:
                 stream.update("")
         else:
@@ -296,12 +312,9 @@ class ConsiliumTUI(App):
             if self.current_target and not self.current_target.exists():
                 if self._in_model_block:
                     self._flush_body(log)
-                if self.fh is not None:
-                    self.fh.close()
-                    self.fh = None
+                self._close_fh()
                 self.current_target = None
                 self.partial_buf = ""
-                self.flushed_partial = False
                 stream.update("")
 
     # ── actions ──────────────────────────────────────────────────────

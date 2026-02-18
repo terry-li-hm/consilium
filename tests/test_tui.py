@@ -83,7 +83,7 @@ async def test_phase_bar_updates(tui_with_transcript):
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause(0.5)
         bar = app.query_one(PhaseBar)
-        assert "JUDGMENT" in bar.phase
+        assert bar.phase == "done"
         assert bar.cost == pytest.approx(0.18, abs=0.01)
 
 
