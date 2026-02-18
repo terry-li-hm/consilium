@@ -215,7 +215,7 @@ def watch_live(live_link: Path) -> None:
 
     Handles:
     - Symlink rotation (new council session starts)
-    - Streaming body text (flush partial lines after timeout)
+    - Token-by-token streaming (partial lines flush immediately)
     - Clean Ctrl+C exit
     """
     console = Console(highlight=False)
@@ -224,9 +224,7 @@ def watch_live(live_link: Path) -> None:
     current_target: Path | None = None
     fh = None
     partial_buf = ""
-    partial_time = 0.0
     flushed_partial = False
-    PARTIAL_TIMEOUT = 0.15  # 150ms before flushing partial line
 
     try:
         while True:
@@ -258,39 +256,28 @@ def watch_live(live_link: Path) -> None:
                 time.sleep(0.1)
                 continue
 
-            # Read available data
-            chunk = fh.readline()
+            # Read available data — grab whatever's buffered
+            chunk = fh.read(4096)
 
             if chunk:
-                if chunk.endswith("\n"):
-                    # Complete line
-                    full_line = partial_buf + chunk.rstrip("\n")
-                    if flushed_partial:
-                        # We already printed partial — print remaining suffix
-                        suffix = full_line[len(partial_buf):]
-                        if suffix:
-                            console.print(suffix, end="")
-                        console.print()  # newline
-                    else:
-                        renderer.render(full_line)
-                    partial_buf = ""
-                    partial_time = 0.0
-                    flushed_partial = False
-                else:
-                    # Partial line — accumulate
-                    if not partial_buf:
-                        partial_time = time.monotonic()
-                    partial_buf += chunk
-            else:
-                # No data available
-                # Check if we should flush partial buffer
-                if partial_buf and not flushed_partial:
-                    elapsed = time.monotonic() - partial_time
-                    if elapsed >= PARTIAL_TIMEOUT:
-                        console.print(partial_buf, end="")
-                        flushed_partial = True
+                partial_buf += chunk
 
-                # Check for file/symlink changes
+                # Process all complete lines in buffer
+                while "\n" in partial_buf:
+                    line, partial_buf = partial_buf.split("\n", 1)
+                    if flushed_partial:
+                        # Previously flushed partial — print suffix to finish
+                        console.print(line)
+                        flushed_partial = False
+                    else:
+                        renderer.render(line)
+
+                # Flush remaining partial content immediately (token-by-token)
+                if partial_buf and not flushed_partial:
+                    console.print(partial_buf, end="")
+                    flushed_partial = True
+            else:
+                # No new data — check for file/symlink changes
                 if current_target and not current_target.exists():
                     if fh is not None:
                         fh.close()

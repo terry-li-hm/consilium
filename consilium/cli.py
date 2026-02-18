@@ -48,6 +48,7 @@ class LiveWriter:
         self._original.write(data)
         if not self._file.closed:
             self._file.write(data)
+            self._file.flush()
 
     def flush(self):
         self._original.flush()
@@ -222,6 +223,7 @@ Examples:
 Session management:
   consilium --stats                        # Cost breakdown by mode
   consilium --watch                        # Live tail from another tmux tab
+  consilium --tui                          # TUI with phase/cost/time tracking
   consilium --view                         # View latest session
   consilium --search "career"              # Search all sessions
         """,
@@ -252,6 +254,7 @@ Session management:
     parser.add_argument("--stats", action="store_true", help="Show session analytics")
     parser.add_argument("--sessions", action="store_true", help="List recent sessions")
     parser.add_argument("--watch", action="store_true", help="Watch live council output (rich formatted)")
+    parser.add_argument("--tui", action="store_true", help="Watch live council output (TUI with phase/cost tracking)")
     parser.add_argument("--view", nargs="?", const="latest", default=None, metavar="TERM", help="View a session in pager")
     parser.add_argument("--search", metavar="TERM", help="Search session content")
     parser.add_argument("--no-judge", action="store_true",
@@ -297,6 +300,20 @@ Session management:
                 live_link.unlink(missing_ok=True)
             print("(no active session — waiting for next council...)", file=sys.stderr, flush=True)
         watch_live(live_link)
+        sys.exit(0)
+
+    # Handle --tui
+    if args.tui:
+        from .tui import run_tui
+
+        live_link = get_sessions_dir().parent / "live.md"
+        live_dir = get_sessions_dir().parent
+        active_files = list(live_dir.glob("live-*.md"))
+        if not active_files:
+            if live_link.is_symlink():
+                live_link.unlink(missing_ok=True)
+        run_tui(live_link)
+        sys.exit(0)
 
     # Handle --view
     if args.view is not None:
@@ -482,6 +499,15 @@ Session management:
     if not args.quiet:
         live_pid_path = live_dir / f"live-{os.getpid()}.md"
         live_link = live_dir / "live.md"
+
+        # Clean up stale live files from previous sessions (not ours)
+        for old_live in live_dir.glob("live-*.md"):
+            if old_live != live_pid_path:
+                try:
+                    old_live.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
         _live_file = open(live_pid_path, "w")
         sys.stdout = LiveWriter(sys.stdout, _live_file)
 
@@ -496,10 +522,8 @@ Session management:
 
         def _cleanup_live():
             _live_file.close()
-            try:
-                live_pid_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+            # Don't delete — watchers (--tui, --watch) need time to read.
+            # Stale files cleaned up on next session start.
 
         atexit.register(_cleanup_live)
 
