@@ -494,7 +494,9 @@ Rules:
 
 The council's gravitational pull is toward "add more." Your gravitational pull must be toward "do less." A recommendation with 6 action items is not a recommendation — it's a wish list.
 
-Don't recommend building infrastructure for problems that don't exist yet."""
+Don't recommend building infrastructure for problems that don't exist yet.
+
+If this council revealed a reusable pattern about model reliability, user blind spots, or question framing, propose a candidate Static Note update at the end of your synthesis."""
 
         if practical_mode:
             judge_system += """
