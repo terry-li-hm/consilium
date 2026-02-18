@@ -564,34 +564,72 @@ def detect_consensus(
 
 EXTRACTION_PROMPT = """Extract a structured JSON summary from this judge synthesis.
 
-The synthesis uses an ACH (Analysis of Competing Hypotheses) format with these sections:
-- "Competing Hypotheses" — lists plausible conclusions (H1, H2, etc.)
-- "Points of Agreement" / "Points of Disagreement"
-- "Judge's Own Take"
-- "Synthesis"
-- "Recommendation" with "Do Now", "Consider Later", "Skip" subsections
+The text uses ACH (Analysis of Competing Hypotheses) with Competing Hypotheses (H1, H2, etc.), Points of Disagreement, and a Synthesis section.
 
-Return ONLY valid JSON (no markdown fences, no commentary) matching this schema:
+Return ONLY valid JSON (no markdown fences) matching this schema:
 
 {
-  "decision": "The core recommendation from the Recommendation section in 1-2 sentences",
+  "decision": "The core recommendation in 1-2 actionable sentences",
   "confidence": "high|medium|low",
-  "winning_hypothesis": "Which hypothesis (H1/H2/H3/H4) the judge endorsed and a one-line summary",
+  "winning_hypothesis": "H label + one-line summary of the endorsed hypothesis",
   "reasoning_summary": "2-3 sentence summary of the Synthesis section",
-  "dissents": [{"model": "model name", "concern": "what they disagreed on"}],
-  "action_items": [{"action": "specific action", "priority": "high|medium|low"}],
-  "do_now": ["action 1", "action 2", "action 3"],
-  "consider_later": ["item 1", "item 2"],
-  "skip": ["dropped item with reason"]
+  "dissents": [{"model": "speaker/model name", "concern": "what they disagreed on"}]
 }
 
 Rules:
-- decision: extract from the "## Recommendation" section, NOT from critique responses or hypothesis listings
-- winning_hypothesis: which competing hypothesis survived the ACH analysis
-- do_now: max 3 items from the judge's "Do Now" subsection under Recommendation
-- action_items: all concrete actions mentioned, with priority
-- dissents: from "Points of Disagreement" — real disagreements with the model name that raised them
-- If a field has no content, use an empty list []"""
+- decision: summarize the Synthesis into what should actually be done, not a section heading
+- winning_hypothesis: which H was endorsed or closest to the final position
+- dissents: unresolved disagreements from Points of Disagreement with the speaker who raised them
+- If no content for a field, use "" or []"""
+
+
+def _parse_recommendation_items(judge_response: str) -> dict:
+    """Extract Do Now, Consider Later, Skip items from Recommendation section using regex."""
+    result: dict = {}
+
+    rec_match = re.search(r'## Recommendation[^\n]*\n(.*?)(?=\n## |\Z)', judge_response, re.DOTALL)
+    if not rec_match:
+        return result
+    rec_text = rec_match.group(1)
+
+    # Do Now: bold numbered items like **1. Title here.**
+    do_now_match = re.search(r'### Do Now[^\n]*\n(.*?)(?=\n### |\Z)', rec_text, re.DOTALL)
+    if do_now_match:
+        items = re.findall(r'\*\*\d+\.\s*(.+?)\*\*', do_now_match.group(1))
+        result["do_now"] = [item.strip().rstrip('.') for item in items if len(item.strip()) > 5]
+
+    # Consider Later: bullet items with bold lead
+    consider_match = re.search(r'### Consider Later[^\n]*\n(.*?)(?=\n### |\Z)', rec_text, re.DOTALL)
+    if consider_match:
+        items = re.findall(r'^[-*]\s+\*\*(.+?)\*\*', consider_match.group(1), re.MULTILINE)
+        if not items:
+            items = [line.lstrip('-* ').strip() for line in consider_match.group(1).split('\n')
+                     if line.strip().startswith(('-', '*')) and len(line.strip()) > 5]
+        result["consider_later"] = items
+
+    # Skip: bullet items with bold lead
+    skip_match = re.search(r'### Skip[^\n]*\n(.*?)(?=\n### |\n---|\Z)', rec_text, re.DOTALL)
+    if skip_match:
+        items = re.findall(r'^[-*]\s+\*\*(.+?)\*\*', skip_match.group(1), re.MULTILINE)
+        if not items:
+            items = [line.lstrip('-* ').strip() for line in skip_match.group(1).split('\n')
+                     if line.strip().startswith(('-', '*')) and len(line.strip()) > 5]
+        result["skip"] = items
+
+    return result
+
+
+def _extract_for_llm(judge_response: str) -> str:
+    """Extract interpretive sections for LLM summarization (not the structured Recommendation items)."""
+    parts = []
+    for header in ("Competing Hypotheses", "Points of Disagreement", "Synthesis"):
+        pattern = rf"## {header}[^\n]*\n(.*?)(?=\n## |\Z)"
+        match = re.search(pattern, judge_response, re.DOTALL)
+        if match:
+            parts.append(f"## {header}\n{match.group(1).strip()}")
+    if parts:
+        return "\n\n".join(parts)
+    return judge_response
 
 
 def extract_structured_summary(
@@ -604,17 +642,19 @@ def extract_structured_summary(
     api_key: str | None = None,
     cost_accumulator: list[float] | None = None,
 ) -> dict:
-    extracted = {}
+    # Step 1: Code-level extraction of structured items (deterministic)
+    code_items = _parse_recommendation_items(judge_response)
 
-    # Try LLM extraction if API key available
+    # Step 2: LLM extraction for interpretive fields only
+    extracted = {}
     if api_key:
         try:
+            focused_input = _extract_for_llm(judge_response)
             messages = [
                 {"role": "system", "content": EXTRACTION_PROMPT},
-                {"role": "user", "content": judge_response},
+                {"role": "user", "content": focused_input},
             ]
-            raw = query_model(api_key, EXTRACTION_MODEL, messages, max_tokens=800, timeout=30.0, cost_accumulator=cost_accumulator)
-            # Strip markdown fences if present
+            raw = query_model(api_key, EXTRACTION_MODEL, messages, max_tokens=600, timeout=30.0, cost_accumulator=cost_accumulator)
             raw = raw.strip()
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
@@ -623,29 +663,40 @@ def extract_structured_summary(
             raw = raw.strip()
             extracted = json.loads(raw)
         except (json.JSONDecodeError, KeyError, IndexError):
-            pass  # Fall through to fallback
+            pass
 
-    # Fallback: minimal extraction from text
+    # Fallback for LLM fields
     if not extracted:
-        lines = judge_response.split('\n')
+        synth_match = re.search(r'## Synthesis[^\n]*\n(.*?)(?=\n## |\Z)', judge_response, re.DOTALL)
+        synth_text = synth_match.group(1).strip() if synth_match else ""
+
+        # Decision: first substantial line from Synthesis
         decision = ""
-        for line in lines:
-            line_lower = line.lower()
-            if 'recommend' in line_lower or 'decision:' in line_lower:
-                decision = line.strip()
+        for line in (synth_text or judge_response).split('\n'):
+            line = line.strip()
+            if line and len(line) > 30 and not line.startswith('#'):
+                decision = line
                 break
-        if not decision:
-            for line in lines:
-                if len(line.strip()) > 20:
-                    decision = line.strip()
-                    break
+
         extracted = {
             "decision": decision[:500] if decision else "See transcript for details",
             "confidence": "medium",
-            "reasoning_summary": judge_response[:1000],
+            "winning_hypothesis": "",
+            "reasoning_summary": synth_text[:500] if synth_text else "See transcript for details",
             "dissents": [],
-            "action_items": [],
         }
+
+    # Step 3: Merge code-extracted items (override LLM for structured fields)
+    if code_items.get("do_now"):
+        extracted["do_now"] = code_items["do_now"]
+    if code_items.get("consider_later"):
+        extracted["consider_later"] = code_items["consider_later"]
+    if code_items.get("skip"):
+        extracted["skip"] = code_items["skip"]
+
+    # Derive action_items from do_now if not provided by LLM
+    if not extracted.get("action_items") and code_items.get("do_now"):
+        extracted["action_items"] = [{"action": item, "priority": "high"} for item in code_items["do_now"]]
 
     # Always add meta and question
     extracted["schema_version"] = "1.0"
