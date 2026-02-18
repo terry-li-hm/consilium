@@ -564,12 +564,20 @@ def detect_consensus(
 
 EXTRACTION_PROMPT = """Extract a structured JSON summary from this judge synthesis.
 
+The synthesis uses an ACH (Analysis of Competing Hypotheses) format with these sections:
+- "Competing Hypotheses" — lists plausible conclusions (H1, H2, etc.)
+- "Points of Agreement" / "Points of Disagreement"
+- "Judge's Own Take"
+- "Synthesis"
+- "Recommendation" with "Do Now", "Consider Later", "Skip" subsections
+
 Return ONLY valid JSON (no markdown fences, no commentary) matching this schema:
 
 {
-  "decision": "The core recommendation in 1-2 sentences",
+  "decision": "The core recommendation from the Recommendation section in 1-2 sentences",
   "confidence": "high|medium|low",
-  "reasoning_summary": "2-3 sentence summary of why",
+  "winning_hypothesis": "Which hypothesis (H1/H2/H3/H4) the judge endorsed and a one-line summary",
+  "reasoning_summary": "2-3 sentence summary of the Synthesis section",
   "dissents": [{"model": "model name", "concern": "what they disagreed on"}],
   "action_items": [{"action": "specific action", "priority": "high|medium|low"}],
   "do_now": ["action 1", "action 2", "action 3"],
@@ -578,10 +586,11 @@ Return ONLY valid JSON (no markdown fences, no commentary) matching this schema:
 }
 
 Rules:
-- decision: the judge's final recommendation, not a section heading
-- do_now: max 3 items from the judge's "Do Now" section
+- decision: extract from the "## Recommendation" section, NOT from critique responses or hypothesis listings
+- winning_hypothesis: which competing hypothesis survived the ACH analysis
+- do_now: max 3 items from the judge's "Do Now" subsection under Recommendation
 - action_items: all concrete actions mentioned, with priority
-- dissents: real disagreements with the model name that raised them
+- dissents: from "Points of Disagreement" — real disagreements with the model name that raised them
 - If a field has no content, use an empty list []"""
 
 
