@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import time
 import yaml
 
@@ -31,6 +32,63 @@ from .prompts import (
 )
 
 
+def decompose_question(
+    question: str,
+    api_key: str,
+    verbose: bool = True,
+    cost_accumulator: list[float] | None = None,
+) -> list[str]:
+    """Break a complex question into 2-3 focused sub-questions."""
+    judge_model_name = JUDGE_MODEL.split("/")[-1]
+    if verbose:
+        print(f"### Question Decomposition ({judge_model_name})")
+
+    messages = [
+        {
+            "role": "system",
+            "content": """Decompose the user's complex question into 2-3 focused, non-overlapping sub-questions.
+
+Output STRICT JSON only: an array of strings.
+No markdown, no prose, no explanation.
+Each sub-question should be actionable for independent analysis.""",
+        },
+        {"role": "user", "content": f"Question:\n{question}"},
+    ]
+
+    response = query_model(
+        api_key,
+        JUDGE_MODEL,
+        messages,
+        max_tokens=300,
+        stream=verbose,
+        cost_accumulator=cost_accumulator,
+    )
+
+    if verbose:
+        print()
+
+    match = re.search(r"\[[\s\S]*\]", response)
+    candidate = match.group(0) if match else response
+    try:
+        parsed = json.loads(candidate)
+        if isinstance(parsed, list):
+            sub_questions = [str(item).strip() for item in parsed if str(item).strip()]
+            if len(sub_questions) >= 2:
+                return sub_questions[:3]
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+
+    lines = [
+        re.sub(r"^\s*(?:[-*]|\d+[.)])\s*", "", line).strip()
+        for line in response.splitlines()
+    ]
+    fallback = [line for line in lines if line]
+    if len(fallback) >= 2:
+        return fallback[:3]
+
+    return [question]
+
+
 async def run_blind_phase_parallel(
     question: str,
     council_config: list[tuple[str, str, tuple[str, str] | None]],
@@ -41,6 +99,7 @@ async def run_blind_phase_parallel(
     domain_context: str = "",
     practical_mode: bool = False,
     practical_constraint: str = "",
+    sub_questions: list[str] | None = None,
     cost_accumulator: list[float] | None = None,
 ) -> list[tuple[str, str, str]]:
     """Parallel blind first-pass: all models stake claims simultaneously."""
@@ -70,9 +129,14 @@ Factor this into your advice — don't just give strategically optimal answers, 
         print("=" * 60)
         print()
 
+    user_content = f"Question:\n\n{question}"
+    if sub_questions and len(sub_questions) > 1:
+        numbered = "\n".join(f"{i}. {sq}" for i, sq in enumerate(sub_questions, 1))
+        user_content += f"\n\nSub-questions to address:\n{numbered}"
+
     messages = [
         {"role": "system", "content": blind_system},
-        {"role": "user", "content": f"Question:\n\n{question}"},
+        {"role": "user", "content": user_content},
     ]
 
     if verbose:
@@ -196,6 +260,7 @@ def run_council(
     format: str = "prose",
     collabeval: bool = True,
     judge: bool = True,
+    sub_questions: list[str] | None = None,
 ) -> SessionResult:
     """Run the council deliberation. Returns SessionResult."""
 
@@ -221,6 +286,7 @@ def run_council(
             domain_context,
             practical_mode,
             practical_constraint,
+            sub_questions,
             cost_accumulator=cost_accumulator,
         ))
         for name, model_name, claims in blind_claims:
@@ -457,27 +523,31 @@ Factor this into your advice — don't just give strategically optimal answers, 
 
 You did NOT participate in the deliberation — you're seeing it fresh. This gives you objectivity.
 
-After the council members have shared their perspectives, you:
-1. Identify points of AGREEMENT across all members
-2. Identify points of DISAGREEMENT and explain the different views
-3. Add YOUR OWN perspective — what did the council miss? What's your independent take?
-4. Provide a SYNTHESIS that integrates the council's views with your own
-5. Give a final RECOMMENDATION based on everything
-{"6. SOCIAL CALIBRATION: Check if the recommendation would feel natural in actual conversation" if social_mode else ""}
+SYNTHESIS METHOD — Analysis of Competing Hypotheses:
+Rather than seeking the consensus view, first list ALL plausible conclusions from the deliberation (typically 2-4). For each piece of evidence or argument raised by the council, evaluate how well it supports or undermines EACH hypothesis. Eliminate conclusions that are inconsistent with the strongest evidence. The surviving hypothesis is your recommendation.
 
-Format your response as:
+CONVERGENCE SIGNAL:
+When independent agents with different models and training reached the SAME conclusion in the blind phase, treat this as a multiplicatively strong signal — independent agreement from different priors is more reliable than the same conclusion repeated. Push your confidence further toward certainty than a simple average.
+
+SYCOPHANCY CHECK:
+Flag any agent that changed position during debate WITHOUT citing a specific new argument or piece of evidence. Position changes labeled POSITION CHANGE with clear reasoning are healthy. Unlabeled shifts toward consensus are sycophancy — discount these.
+
+After applying this method, structure your response as:
+
+## Competing Hypotheses
+[List 2-4 plausible conclusions. For each, note which council arguments support/undermine it]
 
 ## Points of Agreement
-[What the council agrees on]
+[What the council agrees on — and whether that consensus should be trusted given the sycophancy check]
 
 ## Points of Disagreement
-[Where views differ and why]
+[Where views genuinely diverged and why — these often point to the crux]
 
 ## Judge's Own Take
-[Your independent perspective. What did the council miss or underweight? What would YOU add to this discussion?]
+[Your independent perspective. What did the council miss or underweight?]
 
 ## Synthesis
-[The integrated perspective, combining council views with your own]
+[The integrated perspective, combining council views with your own ACH analysis]
 
 ## Recommendation
 [Your final recommendation]

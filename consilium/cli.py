@@ -236,6 +236,7 @@ Session management:
     parser.add_argument("--domain", help="Regulatory domain context (banking, healthcare, eu, fintech, bio)")
     parser.add_argument("--challenger", help="Which model should argue contrarian")
     parser.add_argument("--followup", action="store_true", help="Enable followup mode after judge synthesis")
+    parser.add_argument("--decompose", action="store_true", help="Decompose complex question into sub-questions before deliberation")
     parser.add_argument("--no-save", action="store_true", help="Don't auto-save transcript")
     parser.add_argument("--quick", action="store_true", help="Quick mode: parallel queries, no debate/judge")
     parser.add_argument("--council", action="store_true", help="Full council: skip auto-routing, always run debate + judge")
@@ -673,7 +674,7 @@ Session management:
                 header_extra=f"**Model:** Claude ({roles_label})")
 
         # Full council mode (explicit --council or auto-routed moderate/complex)
-        from .council import run_council, run_followup_discussion
+        from .council import decompose_question, run_council, run_followup_discussion
 
         if not args.quiet:
             mode_parts = ["anonymous", "blind"]
@@ -691,6 +692,20 @@ Session management:
 
         # Skip collabeval for moderate auto-routed questions; use for complex or explicit --council
         use_collabeval = args.council or difficulty != "moderate"
+        sub_questions = None
+        if args.decompose:
+            if not args.quiet:
+                print("Decomposing question into sub-questions...")
+            sub_questions = decompose_question(
+                question=args.question,
+                api_key=api_key,
+                verbose=not args.quiet,
+            )
+            if not args.quiet and sub_questions:
+                print("Sub-questions:")
+                for i, sub_q in enumerate(sub_questions, 1):
+                    print(f"{i}. {sub_q}")
+                print()
 
         result = run_council(
             question=args.question,
@@ -710,6 +725,7 @@ Session management:
             format=args.output_format,
             collabeval=use_collabeval,
             judge=not args.no_judge,
+            sub_questions=sub_questions,
         )
 
         transcript = result.transcript

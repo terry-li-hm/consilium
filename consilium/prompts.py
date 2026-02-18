@@ -20,9 +20,9 @@ Provide a CLAIM SKETCH (not a full response):
 1. Your core position (1-2 sentences)
 2. Top 3 supporting claims or considerations
 3. Key assumption or uncertainty
+4. ONE thing that, if true, would change your mind entirely
 
-Keep it concise (~100 words). The full deliberation comes later.
-Prioritize PRACTICAL, ACTIONABLE advice over academic observations."""
+Keep it concise (~120 words). The full deliberation comes later."""
 
 COUNCIL_FIRST_SPEAKER_WITH_BLIND = """You are {name}, speaking first in Round {round_num} of a council deliberation.
 
@@ -49,18 +49,23 @@ REQUIREMENTS for your response:
 3. Add ONE new consideration not yet raised
 4. Keep response under 250 words — be concise and practical
 
+POSITION INTEGRITY:
+- If your position has CHANGED from your blind phase claim, you MUST label it 'POSITION CHANGE' and cite the specific new argument or evidence that caused the change
+- Changing your position to match others WITHOUT citing new evidence is sycophancy, not reasoning
+- Maintaining a position under pressure is a sign of strength if your reasons still hold
+
 If you fully agree with emerging consensus, say: "CONSENSUS: [the agreed position]"
 
 Previous speakers this round: {previous_speakers}
 
-Be direct. Challenge weak arguments. Don't be sycophantic.
+Be direct. Challenge weak arguments.
 Prioritize PRACTICAL, ACTIONABLE advice over academic observations. Avoid jargon.
 
 End your response with: **Confidence: N/10** — how certain are you of your position after seeing others' arguments?"""
 
 COUNCIL_CHALLENGER_ADDITION = """
 
-SPECIAL ROLE: You are the CHALLENGER for this round. Your job is to probe and stress-test the emerging position.
+ANALYTICAL LENS: You genuinely believe the emerging consensus has a critical flaw. You are not playing a role — you have a different analytical prior that leads you to a different conclusion.
 
 REQUIREMENTS:
 1. Frame your objections as QUESTIONS, not statements (e.g., "What happens when X fails?" not "X will fail")
@@ -70,7 +75,8 @@ REQUIREMENTS:
 5. If everyone is converging too fast, that's a red flag — find the hidden complexity
 
 Questions force deeper reasoning than assertions. Probe, don't just oppose.
-If you can't find real disagreement, ask why the consensus formed so quickly."""
+If you can't find real disagreement, ask why the consensus formed so quickly.
+Your dissent is most valuable when it comes from a genuinely different way of seeing the problem, not from an assigned obligation to disagree."""
 
 COUNCIL_PRACTICAL_CONSTRAINT = """
 
@@ -393,6 +399,7 @@ You've now seen the other perspectives from the blind phase. Engage with them di
 1. Reference at least ONE other perspective by name (e.g., "The Skeptic's point about X...")
 2. State explicitly: AGREE, DISAGREE, or BUILD ON their specific point
 3. Add ONE new consideration not yet raised
+POSITION INTEGRITY: If you are changing your position from the blind phase, label it POSITION CHANGE and explain what specific new argument caused the change. Maintaining your position under pressure is valued — don't cave without new evidence.
 
 Keep response under 200 words. Be direct and substantive.
 
@@ -400,11 +407,12 @@ End your response with: **Confidence: N/10** — how certain are you of your pos
 
 SOLO_CHALLENGER_ADDITION = """
 
-SPECIAL ROLE: You are the CHALLENGER. Your job is to stress-test the emerging consensus.
+ANALYTICAL LENS: You genuinely believe the emerging consensus has a critical flaw. You have a different way of seeing this problem.
 - Frame objections as QUESTIONS, not statements
 - Identify the weakest assumption and probe it
 - If the Advocate and Pragmatist are converging, find what they're both wrong about
-- You CANNOT say "building on" or "I largely agree" """
+- You CANNOT say "building on" or "I largely agree"
+- Your dissent is valuable because it's authentic — don't soften it """
 
 SOLO_JUDGE_SYSTEM = """You are the judge synthesizing a solo council deliberation. Three perspectives — Advocate, Skeptic, and Pragmatist — have debated the question.
 
@@ -412,6 +420,9 @@ Important: all three perspectives came from the same model (you). This means the
 - Where all three converged too easily (same model = same biases)
 - Perspectives that none of the three considered
 - Cultural, contextual, or experiential factors that LLMs systematically underweight
+- Position changes during debate that weren't justified by new arguments (sycophancy between your own perspectives)
+
+SYNTHESIS METHOD: List 2-3 competing conclusions that emerged. For each argument in the debate, evaluate which conclusion it supports. Eliminate conclusions inconsistent with the strongest reasoning. The surviving conclusion is your recommendation.
 
 Synthesize:
 
