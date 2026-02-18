@@ -8,7 +8,6 @@ import httpx
 from .models import (
     JUDGE_MODEL,
     SessionResult,
-    is_thinking_model,
     parse_confidence,
     query_model,
     query_model_async,
@@ -94,19 +93,38 @@ def run_solo(
         perspective_messages.append(msgs)
 
     async def _run_blind():
+        indexed_results: list[tuple[int, tuple[str, str, str] | Exception]] = []
+
+        async def _query_and_print(idx, name, client):
+            try:
+                result = await query_model_async(
+                    client, model, perspective_messages[idx], name, None, None,
+                    max_tokens=500,
+                    cost_accumulator=cost_accumulator,
+                )
+            except Exception as e:
+                indexed_results.append((idx, e))
+                return
+            if verbose:
+                _, _, response = result
+                if not response.startswith("["):
+                    print(f"\n### {name}")
+                    print(response)
+                    print(flush=True)
+            indexed_results.append((idx, result))
+
         async with httpx.AsyncClient(
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=180.0,
         ) as client:
             tasks = [
-                query_model_async(
-                    client, model, perspective_messages[i], name, None, None,
-                    max_tokens=500,
-                    cost_accumulator=cost_accumulator,
-                )
+                _query_and_print(i, name, client)
                 for i, (name, _, _) in enumerate(perspective_configs)
             ]
-            return await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        indexed_results.sort(key=lambda x: x[0])
+        return indexed_results
 
     if verbose:
         print(f"(generating {len(perspectives)} perspectives in parallel...)")
@@ -114,17 +132,14 @@ def run_solo(
     blind_results = asyncio.run(_run_blind())
 
     blind_claims: dict[str, str] = {}
-    for i, result in enumerate(blind_results):
-        name = perspectives[i][0]
+    for idx, result in blind_results:
+        name = perspectives[idx][0]
         if isinstance(result, Exception):
             response = f"[Error: {result}]"
         else:
             _, _, response = result
 
         blind_claims[name] = response
-        if verbose:
-            print(f"\n### {name}")
-            print(response)
         transcript_parts.append(f"### {name}\n{response}")
 
     if verbose:
@@ -169,16 +184,11 @@ def run_solo(
 
         if verbose:
             print(f"### {name}{challenger_tag}")
-            if is_thinking_model(model):
-                print("(thinking...)", flush=True)
 
         response = query_model(
             api_key, model, messages,
             stream=verbose, cost_accumulator=cost_accumulator,
         )
-
-        if verbose and is_thinking_model(model):
-            print(response)
 
         if verbose:
             print()
@@ -243,9 +253,6 @@ def run_solo(
         api_key, model, judge_messages,
         max_tokens=1200, stream=verbose, cost_accumulator=cost_accumulator,
     )
-
-    if verbose and is_thinking_model(model):
-        print(judge_response)
 
     if verbose:
         print()

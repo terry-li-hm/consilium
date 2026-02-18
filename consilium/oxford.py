@@ -9,7 +9,6 @@ import httpx
 from .models import (
     JUDGE_MODEL,
     SessionResult,
-    is_thinking_model,
     query_model,
     query_model_async,
     sanitize_speaker_content,
@@ -75,17 +74,12 @@ def run_oxford(
 
         if verbose:
             print("## Motion\n")
-            if is_thinking_model(judge_model):
-                print("(thinking...)", flush=True)
 
         motion = query_model(
             api_key, judge_model, motion_messages,
             max_tokens=100, stream=verbose, cost_accumulator=cost_accumulator,
         )
         motion = motion.strip().strip('"')
-
-        if verbose and is_thinking_model(judge_model):
-            print(motion)
 
         if verbose:
             print()
@@ -108,8 +102,6 @@ def run_oxford(
     if verbose:
         print("## Prior\n")
         print(f"### {judge_name}")
-        if is_thinking_model(judge_model):
-            print("(thinking...)", flush=True)
 
     prior_messages = [
         {"role": "system", "content": OXFORD_JUDGE_PRIOR.format(motion=motion) + _persona_suffix()},
@@ -120,9 +112,6 @@ def run_oxford(
         api_key, judge_model, prior_messages,
         max_tokens=200, stream=verbose, cost_accumulator=cost_accumulator,
     )
-
-    if verbose and is_thinking_model(judge_model):
-        print(prior_response)
 
     if verbose:
         print()
@@ -148,21 +137,39 @@ def run_oxford(
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=180.0,
         ) as client:
-            prop_task = query_model_async(
-                client, prop_model,
-                [{"role": "system", "content": prop_system},
-                 {"role": "user", "content": f"Argue FOR the motion: {motion}"}],
-                prop_name, fallback=prop_fallback, google_api_key=google_api_key,
-                max_tokens=800, cost_accumulator=cost_accumulator,
-            )
-            opp_task = query_model_async(
-                client, opp_model,
-                [{"role": "system", "content": opp_system},
-                 {"role": "user", "content": f"Argue AGAINST the motion: {motion}"}],
-                opp_name, fallback=opp_fallback, google_api_key=google_api_key,
-                max_tokens=800, cost_accumulator=cost_accumulator,
-            )
-            return await asyncio.gather(prop_task, opp_task, return_exceptions=True)
+            async def _prop():
+                result = await query_model_async(
+                    client, prop_model,
+                    [{"role": "system", "content": prop_system},
+                     {"role": "user", "content": f"Argue FOR the motion: {motion}"}],
+                    prop_name, fallback=prop_fallback, google_api_key=google_api_key,
+                    max_tokens=800, cost_accumulator=cost_accumulator,
+                )
+                if verbose:
+                    _, _, response = result
+                    if not response.startswith("["):
+                        print(f"\n### {prop_name} (Proposition)")
+                        print(response)
+                        print(flush=True)
+                return result
+
+            async def _opp():
+                result = await query_model_async(
+                    client, opp_model,
+                    [{"role": "system", "content": opp_system},
+                     {"role": "user", "content": f"Argue AGAINST the motion: {motion}"}],
+                    opp_name, fallback=opp_fallback, google_api_key=google_api_key,
+                    max_tokens=800, cost_accumulator=cost_accumulator,
+                )
+                if verbose:
+                    _, _, response = result
+                    if not response.startswith("["):
+                        print(f"\n### {opp_name} (Opposition)")
+                        print(response)
+                        print(flush=True)
+                return result
+
+            return await asyncio.gather(_prop(), _opp(), return_exceptions=True)
 
     results = list(asyncio.run(_run_constructives()))
     for i, r in enumerate(results):
@@ -172,10 +179,6 @@ def run_oxford(
     (_, _, prop_constructive), (_, _, opp_constructive) = results
 
     if verbose:
-        print(f"\n### {prop_name} (Proposition)")
-        print(prop_constructive)
-        print(f"\n### {opp_name} (Opposition)")
-        print(opp_constructive)
         print()
 
     transcript_parts.append(f"### {prop_name} (Proposition)\n{prop_constructive}")
@@ -195,8 +198,6 @@ def run_oxford(
 
     if verbose:
         print(f"### {prop_name} (Proposition rebuttal)")
-        if is_thinking_model(prop_model):
-            print("(thinking...)", flush=True)
 
     prop_rebuttal = query_model(
         api_key, prop_model, [
@@ -205,9 +206,6 @@ def run_oxford(
         ],
         max_tokens=600, stream=verbose, cost_accumulator=cost_accumulator,
     )
-
-    if verbose and is_thinking_model(prop_model):
-        print(prop_rebuttal)
 
     if verbose:
         print()
@@ -222,8 +220,6 @@ def run_oxford(
 
     if verbose:
         print(f"### {opp_name} (Opposition rebuttal)")
-        if is_thinking_model(opp_model):
-            print("(thinking...)", flush=True)
 
     opp_rebuttal = query_model(
         api_key, opp_model, [
@@ -232,9 +228,6 @@ def run_oxford(
         ],
         max_tokens=600, stream=verbose, cost_accumulator=cost_accumulator,
     )
-
-    if verbose and is_thinking_model(opp_model):
-        print(opp_rebuttal)
 
     if verbose:
         print()
@@ -260,21 +253,39 @@ def run_oxford(
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=180.0,
         ) as client:
-            prop_task = query_model_async(
-                client, prop_model,
-                [{"role": "system", "content": prop_closing_system},
-                 {"role": "user", "content": "Give your closing statement."}],
-                prop_name, fallback=prop_fallback, google_api_key=google_api_key,
-                max_tokens=400, cost_accumulator=cost_accumulator,
-            )
-            opp_task = query_model_async(
-                client, opp_model,
-                [{"role": "system", "content": opp_closing_system},
-                 {"role": "user", "content": "Give your closing statement."}],
-                opp_name, fallback=opp_fallback, google_api_key=google_api_key,
-                max_tokens=400, cost_accumulator=cost_accumulator,
-            )
-            return await asyncio.gather(prop_task, opp_task, return_exceptions=True)
+            async def _prop():
+                result = await query_model_async(
+                    client, prop_model,
+                    [{"role": "system", "content": prop_closing_system},
+                     {"role": "user", "content": "Give your closing statement."}],
+                    prop_name, fallback=prop_fallback, google_api_key=google_api_key,
+                    max_tokens=400, cost_accumulator=cost_accumulator,
+                )
+                if verbose:
+                    _, _, response = result
+                    if not response.startswith("["):
+                        print(f"\n### {prop_name} (Proposition closing)")
+                        print(response)
+                        print(flush=True)
+                return result
+
+            async def _opp():
+                result = await query_model_async(
+                    client, opp_model,
+                    [{"role": "system", "content": opp_closing_system},
+                     {"role": "user", "content": "Give your closing statement."}],
+                    opp_name, fallback=opp_fallback, google_api_key=google_api_key,
+                    max_tokens=400, cost_accumulator=cost_accumulator,
+                )
+                if verbose:
+                    _, _, response = result
+                    if not response.startswith("["):
+                        print(f"\n### {opp_name} (Opposition closing)")
+                        print(response)
+                        print(flush=True)
+                return result
+
+            return await asyncio.gather(_prop(), _opp(), return_exceptions=True)
 
     results = list(asyncio.run(_run_closings()))
     for i, r in enumerate(results):
@@ -284,10 +295,6 @@ def run_oxford(
     (_, _, prop_closing), (_, _, opp_closing) = results
 
     if verbose:
-        print(f"\n### {prop_name} (Proposition closing)")
-        print(prop_closing)
-        print(f"\n### {opp_name} (Opposition closing)")
-        print(opp_closing)
         print()
 
     transcript_parts.append(f"### {prop_name} (Proposition closing)\n{prop_closing}")
@@ -297,8 +304,6 @@ def run_oxford(
     if verbose:
         print("## Verdict\n")
         print(f"### {judge_name}")
-        if is_thinking_model(judge_model):
-            print("(thinking...)", flush=True)
 
     transcript_parts.append("## Verdict")
 
@@ -325,9 +330,6 @@ def run_oxford(
         ],
         max_tokens=1000, stream=verbose, cost_accumulator=cost_accumulator,
     )
-
-    if verbose and is_thinking_model(judge_model):
-        print(verdict)
 
     if verbose:
         print()

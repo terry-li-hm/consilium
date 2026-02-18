@@ -125,7 +125,7 @@ def query_model(
         max_tokens = max(max_tokens, 2500)
         timeout = max(timeout, 180.0)
 
-    if stream and not is_thinking_model(model):
+    if stream:
         result = query_model_streaming(api_key, model, messages, max_tokens, timeout, cost_accumulator=cost_accumulator)
         if not result.startswith("["):
             return result
@@ -190,6 +190,10 @@ def query_model(
             cost = usage.get("cost")
             if cost is not None:
                 cost_accumulator.append(float(cost))
+
+        # If streaming was requested but failed, print the non-streamed response
+        if stream:
+            print(content)
 
         return content
 
@@ -468,25 +472,47 @@ async def run_parallel(
     google_api_key: str | None = None,
     max_tokens: int = 500,
     cost_accumulator: list[float] | None = None,
+    verbose: bool = False,
 ) -> list[tuple[str, str, str]]:
-    """Parallel query panelists with shared messages. Returns [(name, model_name, response)]."""
+    """Parallel query panelists with shared messages. Returns [(name, model_name, response)].
+
+    When verbose=True, prints each model's response as soon as it completes.
+    """
+    indexed_results: list[tuple[int, tuple[str, str, str] | Exception]] = []
+
+    async def _query_and_print(idx, name, model, fallback, client):
+        try:
+            result = await query_model_async(
+                client, model, messages, name, fallback,
+                google_api_key, max_tokens=max_tokens,
+                cost_accumulator=cost_accumulator,
+            )
+        except Exception as e:
+            indexed_results.append((idx, e))
+            return
+        if verbose:
+            _, model_name, response = result
+            if not response.startswith("["):
+                print(f"\n### {name}")
+                print(response)
+                print(flush=True)
+        indexed_results.append((idx, result))
+
     async with httpx.AsyncClient(
         headers={"Authorization": f"Bearer {api_key}"},
         timeout=180.0,
     ) as client:
         tasks = [
-            query_model_async(
-                client, model, messages, name, fallback,
-                google_api_key, max_tokens=max_tokens,
-                cost_accumulator=cost_accumulator,
-            )
-            for name, model, fallback in panelists
+            _query_and_print(i, name, model, fallback, client)
+            for i, (name, model, fallback) in enumerate(panelists)
         ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    indexed_results.sort(key=lambda x: x[0])
 
     out = []
-    for i, result in enumerate(results):
-        name, model, fallback = panelists[i]
+    for idx, result in indexed_results:
+        name, model, fallback = panelists[idx]
         model_name = model.split("/")[-1]
         if isinstance(result, Exception):
             out.append((name, model_name, f"[Error: {result}]"))

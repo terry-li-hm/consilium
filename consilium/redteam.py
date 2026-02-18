@@ -8,7 +8,6 @@ import httpx
 from .models import (
     DISCUSS_HOST,
     SessionResult,
-    is_thinking_model,
     query_model,
     query_model_async,
     query_google_ai_studio,
@@ -104,24 +103,41 @@ def run_redteam(
         parallel_messages_list.append(msgs)
 
     async def _run_attacks():
+        indexed_results: list[tuple[int, tuple[str, str, str] | Exception]] = []
+
+        async def _query_and_print(idx, name, model, fallback, client):
+            try:
+                result = await query_model_async(
+                    client, model, parallel_messages_list[idx], name, fallback,
+                    google_api_key,
+                    max_tokens=600,
+                    cost_accumulator=cost_accumulator,
+                )
+            except Exception as e:
+                indexed_results.append((idx, e))
+                return
+            if verbose:
+                _, model_name, response = result
+                if not response.startswith("["):
+                    print(f"\n### {name}")
+                    print(response)
+                    print(flush=True)
+            indexed_results.append((idx, result))
+
         async with httpx.AsyncClient(
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=180.0,
         ) as client:
             tasks = [
-                query_model_async(
-                    client, model, parallel_messages_list[i], name, fallback,
-                    google_api_key,
-                    max_tokens=600,
-                    cost_accumulator=cost_accumulator,
-                )
+                _query_and_print(i, name, model, fallback, client)
                 for i, (name, model, fallback) in enumerate(parallel_panelists)
             ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)
 
+        indexed_results.sort(key=lambda x: x[0])
         out = []
-        for i, result in enumerate(results):
-            name, model, fallback = parallel_panelists[i]
+        for idx, result in indexed_results:
+            name, model, fallback = parallel_panelists[idx]
             model_name = model.split("/")[-1]
             if isinstance(result, Exception):
                 out.append((name, model_name, f"[Error: {result}]"))
@@ -135,9 +151,6 @@ def run_redteam(
     attack_results = asyncio.run(_run_attacks())
 
     for name, model_name, response in attack_results:
-        if verbose:
-            print(f"\n### {name}")
-            print(response)
         transcript_parts.append(f"### {name}\n{response}")
         conversation_history.append((name, response))
 
@@ -201,8 +214,6 @@ def run_redteam(
 
         if verbose:
             print(f"### {name}")
-            if is_thinking_model(model):
-                print("(thinking...)", flush=True)
 
         response = query_model(
             api_key, model, deepen_attacker_messages,
@@ -219,7 +230,7 @@ def run_redteam(
                 response = query_google_ai_studio(google_api_key, fallback_model, deepen_attacker_messages)
                 used_fallback = True
 
-        if verbose and (is_thinking_model(model) or used_fallback):
+        if verbose and used_fallback:
             print(response)
 
         if verbose:

@@ -11,7 +11,6 @@ from .models import (
     JUDGE_MODEL,
     CRITIQUE_MODEL,
     SessionResult,
-    is_thinking_model,
     parse_confidence,
     query_model,
     query_google_ai_studio,
@@ -145,14 +144,11 @@ Factor this into your advice — don't just give strategically optimal answers, 
     blind_claims = await run_parallel(
         council_config, messages, api_key, google_api_key,
         cost_accumulator=cost_accumulator,
+        verbose=verbose,
     )
 
     if verbose:
         print()
-        for name, model_name, claims in blind_claims:
-            print(f"### {model_name} (blind)")
-            print(claims)
-            print()
 
     return blind_claims
 
@@ -403,8 +399,6 @@ Factor this into your advice — don't just give strategically optimal answers, 
 
             if verbose:
                 print(f"### {model_name}{challenger_indicator}")
-                if is_thinking_model(model):
-                    print("(thinking...)", flush=True)
 
             response = query_model(api_key, model, messages, stream=verbose, cost_accumulator=cost_accumulator)
 
@@ -419,7 +413,7 @@ Factor this into your advice — don't just give strategically optimal answers, 
                     used_fallback = True
                     model_name = fallback_model
 
-            if verbose and (is_thinking_model(model) or used_fallback):
+            if verbose and used_fallback:
                 print(response)
 
             if response.startswith("["):

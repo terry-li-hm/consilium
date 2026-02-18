@@ -6,7 +6,6 @@ import time
 from .models import (
     DISCUSS_HOST,
     SessionResult,
-    is_thinking_model,
     query_model,
     query_google_ai_studio,
     run_parallel,
@@ -134,15 +133,13 @@ def run_discuss(
     opening_results = asyncio.run(run_parallel(
         panelists, opening_messages, api_key, google_api_key,
         max_tokens=500, cost_accumulator=cost_accumulator,
+        verbose=verbose,
     ))
 
     if is_socratic:
         transcript_parts.append("## Answers")
 
     for name, model_name, response in opening_results:
-        if verbose:
-            print(f"\n### {name}")
-            print(response)
         transcript_parts.append(f"### {name}\n{response}")
         conversation_history.append((name, response))
 
@@ -208,8 +205,6 @@ def run_discuss(
 
                 if verbose:
                     print(f"### {name}")
-                    if is_thinking_model(model):
-                        print("(thinking...)", flush=True)
 
                 response = query_model(
                     api_key, model, panelist_messages,
@@ -226,7 +221,7 @@ def run_discuss(
                         response = query_google_ai_studio(google_api_key, fallback_model, panelist_messages)
                         used_fallback = True
 
-                if verbose and (is_thinking_model(model) or used_fallback):
+                if verbose and used_fallback:
                     print(response)
 
                 if verbose:
@@ -264,12 +259,10 @@ def run_discuss(
     closing_results = asyncio.run(run_parallel(
         panelists, closing_messages, api_key, google_api_key,
         max_tokens=300, cost_accumulator=cost_accumulator,
+        verbose=verbose,
     ))
 
     for name, model_name, response in closing_results:
-        if verbose:
-            print(f"\n### {name}")
-            print(response)
         transcript_parts.append(f"### {name}\n{response}")
         conversation_history.append((name, response))
 
