@@ -83,20 +83,24 @@ def detect_social_context(question: str) -> bool:
     return any(keyword in question_lower for keyword in SOCIAL_KEYWORDS)
 
 
-def classify_difficulty(
+def classify_mode(
     question: str,
     api_key: str,
     cost_accumulator: list[float] | None = None,
 ) -> str:
-    """Classify question difficulty for DAAO routing. Returns 'simple', 'moderate', or 'complex'."""
+    """Classify question into best deliberation mode. Returns mode name."""
     messages = [
-        {"role": "system", "content": """Classify this question's deliberation difficulty as exactly one of: simple, moderate, complex.
+        {"role": "system", "content": """Pick the best deliberation mode for this question. Respond with ONLY the mode name.
 
-simple: Factual questions, straightforward comparisons, well-known answers, single-dimension questions
-moderate: Multi-faceted trade-off analysis, technical decisions with 2-3 competing factors, "should I X or Y" choices
-complex: High-stakes decisions with many interacting variables, deeply nuanced strategic/ethical questions, decisions with irreversible consequences
+quick: Factual questions, straightforward comparisons, single-dimension — just need parallel opinions
+council: Complex trade-offs, multi-stakeholder, strategic decisions with many interacting variables
+oxford: Binary decisions with clear for/against framing — "should I X or Y?"
+redteam: Stress-testing a plan, decision, or strategy — "what could go wrong with X?"
+socratic: Exposing hidden assumptions, probing beliefs — "what am I not seeing about X?"
+discuss: Open-ended exploration, no clear decision needed — "let's think about X"
+solo: Niche — only when the user explicitly wants one model in multiple roles
 
-Respond with ONLY the single word: simple, moderate, or complex."""},
+Default to council when unsure."""},
         {"role": "user", "content": question},
     ]
     response = query_model(
@@ -105,9 +109,10 @@ Respond with ONLY the single word: simple, moderate, or complex."""},
         cost_accumulator=cost_accumulator,
     )
     result = response.strip().lower().rstrip(".")
-    if result in ("simple", "moderate", "complex"):
+    valid_modes = ("quick", "council", "oxford", "redteam", "socratic", "discuss", "solo")
+    if result in valid_modes:
         return result
-    return "moderate"
+    return "council"
 
 
 def query_model(

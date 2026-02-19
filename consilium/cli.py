@@ -189,16 +189,16 @@ def main():
         DISCUSS_MODELS,
         REDTEAM_MODELS,
         OXFORD_MODELS,
-        classify_difficulty,
+        classify_mode,
         detect_social_context,
     )
     from .prompts import ROLE_LIBRARY, DOMAIN_CONTEXTS
 
     parser = argparse.ArgumentParser(
-        description="Multi-model deliberation CLI. Auto-routes by difficulty, or pick a mode.",
+        description="Multi-model deliberation CLI. Auto-routes by question type, or pick a mode.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Default: auto-routes by question difficulty (simple→quick, complex→council).
+Default: auto-routes by question type (quick, council, oxford, redteam, socratic, discuss, solo).
 
 Modes:
   (no flag)   Auto-route — Opus classifies, then runs quick or council
@@ -527,19 +527,18 @@ Session management:
 
         atexit.register(_cleanup_live)
 
-    # Default: auto-route by difficulty (unless an explicit mode was chosen)
-    difficulty = None
+    # Default: auto-route by question type (unless an explicit mode was chosen)
+    auto_mode = None
     explicit_mode = any(getattr(args, f) for f in ("quick", "council", "discuss", "redteam", "solo", "socratic", "oxford"))
     if not explicit_mode:
         if not args.quiet:
-            print("Classifying question difficulty...", flush=True)
-        difficulty = classify_difficulty(args.question, api_key)
+            print("Classifying question...", flush=True)
+        auto_mode = classify_mode(args.question, api_key)
         if not args.quiet:
-            print(f"Difficulty: {difficulty}")
+            print(f"Mode: {auto_mode}")
             print()
 
-        if difficulty == "simple":
-            args.quick = True
+        setattr(args, auto_mode, True)
 
     try:
         # Quick mode
@@ -715,7 +714,7 @@ Session management:
             print()
 
         # Skip collabeval for moderate auto-routed questions; use for complex or explicit --council
-        use_collabeval = args.council or difficulty != "moderate"
+        use_collabeval = auto_mode is None  # Collabeval for explicit --council; skip for auto-routed
         cli_cost_accumulator: list[float] = []  # Track costs outside run_council
         sub_questions = None
         if args.decompose:
@@ -776,7 +775,7 @@ Session management:
                 )
                 transcript += "\n\n" + followup_transcript
 
-        mode_label = f"anonymous, blind{', social' if social_mode else ''}{f', auto ({difficulty})' if difficulty else ''}{', collabeval' if use_collabeval else ''}{', no-judge' if args.no_judge else ''}"
+        mode_label = f"anonymous, blind{', social' if social_mode else ''}{f', auto-routed' if auto_mode else ''}{', collabeval' if use_collabeval else ''}{', no-judge' if args.no_judge else ''}"
         header_lines = f"**Mode:** {mode_label}"
         if args.context:
             header_lines += f"\n**Context:** {args.context}"
@@ -789,8 +788,8 @@ Session management:
             "collabeval": use_collabeval,
             "judge": "external" if args.no_judge else "internal",
         }
-        if difficulty:
-            history_extra["difficulty"] = difficulty
+        if auto_mode:
+            history_extra["auto_mode"] = auto_mode
 
         # Council uses transcript (may include followup), not result.transcript directly
         from .models import SessionResult
