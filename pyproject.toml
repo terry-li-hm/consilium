@@ -1,6 +1,6 @@
 [project]
 name = "consilium"
-version = "0.14.0"
+version = "0.15.0"
 description = "Multi-model deliberation CLI. 4 frontier LLMs debate with rotating challenger, then Claude judges."
 readme = "README.md"
 requires-python = ">=3.11"
