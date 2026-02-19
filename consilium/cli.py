@@ -420,40 +420,10 @@ Session management:
     if not args.question:
         parser.error("the following arguments are required: question")
 
-    # Validate mode flags
+    # Validate explicit mode flags (mutually exclusive check only — full validation after auto-routing)
     mode_flags = [f for f in ["--quick", "--council", "--discuss", "--redteam", "--solo", "--socratic", "--oxford"] if getattr(args, f.lstrip("-"))]
     if len(mode_flags) > 1:
         parser.error(f"{' and '.join(mode_flags)} are mutually exclusive")
-
-    if args.quick:
-        debate_flags = []
-        if args.challenger:
-            debate_flags.append("--challenger")
-        if args.followup:
-            debate_flags.append("--followup")
-        if debate_flags:
-            parser.error(f"--quick is incompatible with: {', '.join(debate_flags)}")
-
-    for mode in ("discuss", "redteam", "solo", "socratic", "oxford"):
-        if getattr(args, mode):
-            incompatible = []
-            if args.challenger:
-                incompatible.append("--challenger")
-            if args.followup:
-                incompatible.append("--followup")
-            if args.output_format != "prose":
-                incompatible.append("--format")
-            if incompatible:
-                parser.error(f"--{mode} is incompatible with: {', '.join(incompatible)}")
-
-    if hasattr(args, 'roles') and args.roles and not args.solo:
-        parser.error("--roles requires --solo")
-
-    if args.rounds is not None and not (args.discuss or args.socratic):
-        parser.error("--rounds requires --discuss or --socratic")
-
-    if args.motion and not args.oxford:
-        parser.error("--motion requires --oxford")
 
     # Auto-detect social context
     social_mode = detect_social_context(args.question)
@@ -539,6 +509,37 @@ Session management:
             print()
 
         setattr(args, auto_mode, True)
+
+    # Validate flag compatibility (after auto-routing so it catches both explicit and auto-routed modes)
+    if args.quick:
+        debate_flags = []
+        if args.challenger:
+            debate_flags.append("--challenger")
+        if args.followup:
+            debate_flags.append("--followup")
+        if debate_flags:
+            parser.error(f"--quick is incompatible with: {', '.join(debate_flags)}")
+
+    for mode in ("discuss", "redteam", "solo", "socratic", "oxford"):
+        if getattr(args, mode):
+            incompatible = []
+            if args.challenger:
+                incompatible.append("--challenger")
+            if args.followup:
+                incompatible.append("--followup")
+            if args.output_format != "prose":
+                incompatible.append("--format")
+            if incompatible:
+                parser.error(f"--{mode} is incompatible with: {', '.join(incompatible)}")
+
+    if hasattr(args, 'roles') and args.roles and not args.solo:
+        parser.error("--roles requires --solo")
+
+    if args.rounds is not None and not (args.discuss or args.socratic):
+        parser.error("--rounds requires --discuss or --socratic")
+
+    if args.motion and not args.oxford:
+        parser.error("--motion requires --oxford")
 
     try:
         # Quick mode
@@ -714,7 +715,7 @@ Session management:
             print()
 
         # Skip collabeval for moderate auto-routed questions; use for complex or explicit --council
-        use_collabeval = auto_mode is None  # Collabeval for explicit --council; skip for auto-routed
+        use_collabeval = True
         cli_cost_accumulator: list[float] = []  # Track costs outside run_council
         sub_questions = None
         if args.decompose:
