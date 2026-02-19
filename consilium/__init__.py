@@ -1,6 +1,8 @@
 """Consilium - Multi-model deliberation for important decisions."""
 
-__version__ = "0.11.0"
+from importlib.metadata import version as _version
+
+__version__ = _version("consilium")
 
 from .models import (
     COUNCIL,
