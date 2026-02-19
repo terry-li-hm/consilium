@@ -1,8 +1,11 @@
 """Consilium - Multi-model deliberation for important decisions."""
 
-from importlib.metadata import version as _version
+from importlib.metadata import version as _version, PackageNotFoundError
 
-__version__ = _version("consilium")
+try:
+    __version__ = _version("consilium")
+except PackageNotFoundError:
+    __version__ = "dev"
 
 from .models import (
     COUNCIL,

@@ -3,6 +3,7 @@
 import asyncio
 import httpx
 import json
+import random
 import re
 import time
 from dataclasses import dataclass
@@ -137,6 +138,11 @@ def query_model(
         print("(Streaming failed, retrying without streaming...)", flush=True)
 
     for attempt in range(retries + 1):
+        if attempt > 0:
+            # Exponential backoff with jitter: 2s, 4s base + random 0-1s
+            backoff = (2 ** attempt) + random.random()
+            time.sleep(backoff)
+
         try:
             response = httpx.post(
                 OPENROUTER_URL,
@@ -240,6 +246,10 @@ def query_google_ai_studio(
     url = f"{GOOGLE_AI_STUDIO_URL}/{model}:generateContent?key={api_key}"
 
     for attempt in range(retries + 1):
+        if attempt > 0:
+            backoff = (2 ** attempt) + random.random()
+            time.sleep(backoff)
+
         try:
             response = httpx.post(url, json=body, timeout=timeout)
 
@@ -395,6 +405,10 @@ async def query_model_async(
     model_name = model.split("/")[-1]
 
     for attempt in range(retries + 1):
+        if attempt > 0:
+            backoff = (2 ** attempt) + random.random()
+            await asyncio.sleep(backoff)
+
         try:
             response = await client.post(
                 OPENROUTER_URL,
@@ -539,6 +553,15 @@ def parse_confidence(response: str) -> int | None:
         value = int(match.group(1))
         return value if 0 <= value <= 10 else None
     return None
+
+
+def is_error_response(content: str) -> bool:
+    """Check if a response is an error string rather than real content."""
+    return bool(content and content.startswith("[") and (
+        content.startswith("[Error:") or
+        content.startswith("[No response") or
+        content.startswith("[Model still thinking")
+    ))
 
 
 def sanitize_speaker_content(content: str) -> str:

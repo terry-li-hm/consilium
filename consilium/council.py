@@ -11,6 +11,7 @@ from .models import (
     JUDGE_MODEL,
     CRITIQUE_MODEL,
     SessionResult,
+    is_error_response,
     parse_confidence,
     query_model,
     query_google_ai_studio,
@@ -311,9 +312,16 @@ def run_council(
     blind_context = ""
     if blind_claims:
         blind_lines = []
+        valid_blind_count = 0
         for name, _, claims in blind_claims:
             dname = display_names[name]
-            blind_lines.append(f"**{dname}**: {sanitize_speaker_content(claims)}")
+            if is_error_response(claims):
+                blind_lines.append(f"**{dname}**: *(unavailable for this phase)*")
+            else:
+                blind_lines.append(f"**{dname}**: {sanitize_speaker_content(claims)}")
+                valid_blind_count += 1
+        if valid_blind_count < len(blind_claims):
+            blind_lines.append(f"\n*Note: {valid_blind_count} of {len(blind_claims)} models responded in blind phase.*")
         blind_context = "\n\n".join(blind_lines)
 
     for round_num in range(rounds):
@@ -375,6 +383,8 @@ Factor this into your advice — don't just give strategically optimal answers, 
             ]
 
             for speaker, text in conversation:
+                if is_error_response(text):
+                    continue  # Don't feed error strings as speaker arguments
                 speaker_dname = display_names[speaker]
                 sanitized_text = sanitize_speaker_content(text)
                 messages.append({
@@ -449,9 +459,14 @@ Factor this into your advice — don't just give strategically optimal answers, 
         if drift_parts:
             output_parts.append(f"Confidence drift: {', '.join(drift_parts)}")
 
+    # Filter errored responses from judge context — errors are noise, not arguments
+    valid_conversation = [(s, t) for s, t in conversation if not is_error_response(t)]
     deliberation_text = "\n\n".join(
-        f"**{display_names[speaker]}**: {sanitize_speaker_content(text)}" for speaker, text in conversation
+        f"**{display_names[speaker]}**: {sanitize_speaker_content(text)}" for speaker, text in valid_conversation
     )
+    if len(valid_conversation) < len(conversation):
+        failed_count = len(conversation) - len(valid_conversation)
+        deliberation_text += f"\n\n*Note: {failed_count} model response(s) were unavailable and excluded from this transcript.*"
 
     if not judge:
         # External judge mode: emit debate transcript + metadata, skip synthesis
@@ -597,24 +612,30 @@ If the synthesis is genuinely strong, say so briefly — but try hard to find so
 
             output_parts.append(f"### Critique ({critique_model_name})\n{critique_response}")
 
-            # CollabEval Phase 3: Judge revision
-            if verbose:
-                print(f"### Final Synthesis ({judge_model_name})")
+            # CollabEval Phase 3: Judge revision (skip if critique failed)
+            if is_error_response(critique_response):
+                if verbose:
+                    print(f"(Critique unavailable — synthesis is unreviewed)")
+                    print()
+                output_parts.append(f"*(Critique unavailable — synthesis is unreviewed)*")
+            else:
+                if verbose:
+                    print(f"### Final Synthesis ({judge_model_name})")
 
-            revision_messages = judge_messages + [
-                {"role": "assistant", "content": judge_response},
-                {"role": "user", "content": f"An independent critic has reviewed your synthesis:\n\n{critique_response}\n\nRevise your synthesis considering this critique. Keep what's right, fix what's wrong. If the critique raises valid points, integrate them. If not, explain briefly why you stand by your original position. Output your FINAL revised synthesis in the same format."},
-            ]
+                revision_messages = judge_messages + [
+                    {"role": "assistant", "content": judge_response},
+                    {"role": "user", "content": f"An independent critic has reviewed your synthesis:\n\n{critique_response}\n\nRevise your synthesis considering this critique. Keep what's right, fix what's wrong. If the critique raises valid points, integrate them. If not, explain briefly why you stand by your original position. Output your FINAL revised synthesis in the same format."},
+                ]
 
-            final_response = query_model(api_key, JUDGE_MODEL, revision_messages, max_tokens=1200, stream=verbose, cost_accumulator=cost_accumulator)
+                final_response = query_model(api_key, JUDGE_MODEL, revision_messages, max_tokens=1200, stream=verbose, cost_accumulator=cost_accumulator)
 
-            if verbose:
-                print()
+                if verbose:
+                    print()
 
-            output_parts.append(f"### Final Synthesis ({judge_model_name})\n{final_response}")
+                output_parts.append(f"### Final Synthesis ({judge_model_name})\n{final_response}")
 
-            # Use the final revised synthesis for structured extraction
-            judge_response = final_response
+                # Use the final revised synthesis for structured extraction
+                judge_response = final_response
 
         if format != 'prose':
             structured = extract_structured_summary(
