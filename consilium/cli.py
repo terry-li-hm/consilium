@@ -470,13 +470,17 @@ Session management:
         live_pid_path = live_dir / f"live-{os.getpid()}.md"
         live_link = live_dir / "live.md"
 
-        # Clean up stale live files from previous sessions (not ours)
+        # Clean up stale live files — only delete if the PID is dead
         for old_live in live_dir.glob("live-*.md"):
             if old_live != live_pid_path:
                 try:
+                    old_pid = int(old_live.stem.split("-", 1)[1])
+                    os.kill(old_pid, 0)  # Check if process is alive (no signal sent)
+                except (ValueError, ProcessLookupError):
+                    # Dead PID or unparseable — safe to delete
                     old_live.unlink(missing_ok=True)
-                except OSError:
-                    pass
+                except PermissionError:
+                    pass  # PID exists but owned by another user — leave it
 
         _live_file = open(live_pid_path, "w")
         sys.stdout = LiveWriter(sys.stdout, _live_file)
