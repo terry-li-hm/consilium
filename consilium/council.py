@@ -26,7 +26,6 @@ from .prompts import (
     COUNCIL_FIRST_SPEAKER_SYSTEM,
     COUNCIL_DEBATE_SYSTEM,
     COUNCIL_CHALLENGER_ADDITION,
-    COUNCIL_PRACTICAL_CONSTRAINT,
     COUNCIL_SOCIAL_CONSTRAINT,
 )
 
@@ -96,16 +95,11 @@ async def run_blind_phase_parallel(
     verbose: bool = True,
     persona: str | None = None,
     domain_context: str = "",
-    practical_mode: bool = False,
-    practical_constraint: str = "",
     sub_questions: list[str] | None = None,
     cost_accumulator: list[float] | None = None,
 ) -> list[tuple[str, str, str]]:
     """Parallel blind first-pass: all models stake claims simultaneously."""
     blind_system = COUNCIL_BLIND_SYSTEM
-
-    if practical_mode and practical_constraint:
-        blind_system += practical_constraint
 
     if domain_context:
         blind_system += f"""
@@ -250,7 +244,6 @@ def run_council(
     blind: bool = True,
     context: str | None = None,
     social_mode: bool = False,
-    practical_mode: bool = False,
     persona: str | None = None,
     domain: str | None = None,
     challenger_idx: int | None = None,
@@ -269,7 +262,6 @@ def run_council(
     blind_claims = []
     failed_models = []
 
-    practical_constraint = COUNCIL_PRACTICAL_CONSTRAINT if practical_mode else ""
     social_constraint = COUNCIL_SOCIAL_CONSTRAINT if social_mode else ""
 
     if blind:
@@ -281,8 +273,6 @@ def run_council(
             verbose,
             persona,
             domain_context,
-            practical_mode,
-            practical_constraint,
             sub_questions,
             cost_accumulator=cost_accumulator,
         ))
@@ -357,9 +347,6 @@ Apply this regulatory domain context to your analysis."""
 
             if social_mode:
                 system_prompt += social_constraint
-
-            if practical_mode:
-                system_prompt += practical_constraint
 
             if persona:
                 system_prompt += f"""
@@ -492,8 +479,6 @@ Factor this into your advice — don't just give strategically optimal answers, 
             meta["persona"] = persona
         if social_mode:
             meta["social_mode"] = True
-        if practical_mode:
-            meta["practical_mode"] = True
 
         output_parts.append('\n\n---\n\n' + json.dumps(meta, indent=2, ensure_ascii=False))
 
@@ -562,11 +547,6 @@ The council's gravitational pull is toward "add more." Your gravitational pull m
 Don't recommend building infrastructure for problems that don't exist yet.
 
 If this council revealed a reusable pattern about model reliability, user blind spots, or question framing, propose a candidate Static Note update at the end of your synthesis."""
-
-        if practical_mode:
-            judge_system += """
-
-PRACTICAL MODE: The council was asked for actionable triggers and concrete rules. Filter aggressively — drop any recommendation that is philosophical, abstract, or not immediately actionable. Every Do Now item must be a specific rule or trigger, not a habit or mindset shift."""
 
         judge_messages = [
             {"role": "system", "content": judge_system},

@@ -78,14 +78,6 @@ Questions force deeper reasoning than assertions. Probe, don't just oppose.
 If you can't find real disagreement, ask why the consensus formed so quickly.
 Your dissent is most valuable when it comes from a genuinely different way of seeing the problem, not from an assigned obligation to disagree."""
 
-COUNCIL_PRACTICAL_CONSTRAINT = """
-
-PRACTICAL MODE: Focus on actionable triggers and concrete decision rules.
-- Every claim must end with a specific action or rule ("do X when Y")
-- Avoid cognitive science, philosophy, abstract theory, or speculation about human cognition
-- No "it depends" hedging — commit to a threshold or trigger
-- If you can't make it actionable, skip it"""
-
 COUNCIL_SOCIAL_CONSTRAINT = """
 
 SOCIAL CALIBRATION: This is a social/conversational context (interview, networking, outreach).
