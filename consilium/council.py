@@ -162,6 +162,7 @@ def run_followup_discussion(
     social_mode: bool = False,
     persona: str | None = None,
     verbose: bool = True,
+    cost_accumulator: list[float] | None = None,
 ) -> str:
     """Run a focused followup discussion on a specific topic with 2 models. Returns the followup transcript."""
     # Use first two council models (GPT and Gemini) for focused followup
@@ -222,7 +223,7 @@ def run_followup_discussion(
         if verbose:
             print(f"### {name}")
 
-        response = query_model(api_key, model, messages, stream=verbose)
+        response = query_model(api_key, model, messages, stream=verbose, cost_accumulator=cost_accumulator)
 
         if verbose:
             print()

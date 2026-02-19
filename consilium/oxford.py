@@ -184,54 +184,73 @@ def run_oxford(
     transcript_parts.append(f"### {prop_name} (Proposition)\n{prop_constructive}")
     transcript_parts.append(f"### {opp_name} (Opposition)\n{opp_constructive}")
 
-    # === Phase 4: REBUTTAL ===
+    # === Phase 4: REBUTTAL (parallel — each rebuts the other's constructive) ===
     if verbose:
         print("## Rebuttals\n")
+        print("(both sides rebutting in parallel...)", flush=True)
 
     transcript_parts.append("## Rebuttals")
 
-    # Proposition rebuts opposition
     prop_rebuttal_system = OXFORD_REBUTTAL_SYSTEM.format(
         name=prop_name, side="FOR", motion=motion,
         opponent_argument=sanitize_speaker_content(opp_constructive),
     ) + _persona_suffix()
 
-    if verbose:
-        print(f"### {prop_name} (Proposition rebuttal)")
-
-    prop_rebuttal = query_model(
-        api_key, prop_model, [
-            {"role": "system", "content": prop_rebuttal_system},
-            {"role": "user", "content": "Rebut the opposition's arguments."},
-        ],
-        max_tokens=600, stream=verbose, cost_accumulator=cost_accumulator,
-    )
-
-    if verbose:
-        print()
-
-    transcript_parts.append(f"### {prop_name} (Proposition rebuttal)\n{prop_rebuttal}")
-
-    # Opposition rebuts proposition
     opp_rebuttal_system = OXFORD_REBUTTAL_SYSTEM.format(
         name=opp_name, side="AGAINST", motion=motion,
         opponent_argument=sanitize_speaker_content(prop_constructive),
     ) + _persona_suffix()
 
-    if verbose:
-        print(f"### {opp_name} (Opposition rebuttal)")
+    async def _run_rebuttals():
+        async with httpx.AsyncClient(
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=180.0,
+        ) as client:
+            async def _prop():
+                result = await query_model_async(
+                    client, prop_model,
+                    [{"role": "system", "content": prop_rebuttal_system},
+                     {"role": "user", "content": "Rebut the opposition's arguments."}],
+                    prop_name, fallback=prop_fallback, google_api_key=google_api_key,
+                    max_tokens=600, cost_accumulator=cost_accumulator,
+                )
+                if verbose:
+                    _, _, response = result
+                    if not response.startswith("["):
+                        print(f"\n### {prop_name} (Proposition rebuttal)")
+                        print(response)
+                        print(flush=True)
+                return result
 
-    opp_rebuttal = query_model(
-        api_key, opp_model, [
-            {"role": "system", "content": opp_rebuttal_system},
-            {"role": "user", "content": "Rebut the proposition's arguments."},
-        ],
-        max_tokens=600, stream=verbose, cost_accumulator=cost_accumulator,
-    )
+            async def _opp():
+                result = await query_model_async(
+                    client, opp_model,
+                    [{"role": "system", "content": opp_rebuttal_system},
+                     {"role": "user", "content": "Rebut the proposition's arguments."}],
+                    opp_name, fallback=opp_fallback, google_api_key=google_api_key,
+                    max_tokens=600, cost_accumulator=cost_accumulator,
+                )
+                if verbose:
+                    _, _, response = result
+                    if not response.startswith("["):
+                        print(f"\n### {opp_name} (Opposition rebuttal)")
+                        print(response)
+                        print(flush=True)
+                return result
+
+            return await asyncio.gather(_prop(), _opp(), return_exceptions=True)
+
+    rebuttal_results = list(asyncio.run(_run_rebuttals()))
+    for i, r in enumerate(rebuttal_results):
+        if isinstance(r, Exception):
+            side_name = [prop_name, opp_name][i]
+            rebuttal_results[i] = (side_name, "unknown", f"[Error: {r}]")
+    (_, _, prop_rebuttal), (_, _, opp_rebuttal) = rebuttal_results
 
     if verbose:
         print()
 
+    transcript_parts.append(f"### {prop_name} (Proposition rebuttal)\n{prop_rebuttal}")
     transcript_parts.append(f"### {opp_name} (Opposition rebuttal)\n{opp_rebuttal}")
 
     # === Phase 5: CLOSING (parallel) ===

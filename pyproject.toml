@@ -1,6 +1,6 @@
 [project]
 name = "consilium"
-version = "0.13.0"
+version = "0.14.0"
 description = "Multi-model deliberation CLI. 4 frontier LLMs debate with rotating challenger, then Claude judges."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,7 +22,6 @@ classifiers = [
 dependencies = [
     "httpx>=0.25.0",
     "pyyaml>=6.0",
-    "pydantic>=2.0",
     "rich>=13.0",
     "textual>=1.0.0",
 ]

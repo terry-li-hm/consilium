@@ -257,6 +257,8 @@ Session management:
     parser.add_argument("--tui", action="store_true", help="Watch live council output (TUI with phase/cost tracking)")
     parser.add_argument("--view", nargs="?", const="latest", default=None, metavar="TERM", help="View a session in pager")
     parser.add_argument("--search", metavar="TERM", help="Search session content")
+    parser.add_argument("--practical", action="store_true",
+                        help="Focus on actionable triggers and concrete rules (council mode)")
     parser.add_argument("--no-judge", action="store_true",
                         help="Skip judge synthesis (for external judge integration)")
     args = parser.parse_args()
@@ -716,6 +718,7 @@ Session management:
 
         # Skip collabeval for moderate auto-routed questions; use for complex or explicit --council
         use_collabeval = args.council or difficulty != "moderate"
+        cli_cost_accumulator: list[float] = []  # Track costs outside run_council
         sub_questions = None
         if args.decompose:
             if not args.quiet:
@@ -724,6 +727,7 @@ Session management:
                 question=args.question,
                 api_key=api_key,
                 verbose=not args.quiet,
+                cost_accumulator=cli_cost_accumulator,
             )
             if not args.quiet and sub_questions:
                 print("Sub-questions:")
@@ -742,7 +746,7 @@ Session management:
             blind=True,
             context=args.context,
             social_mode=social_mode,
-            practical_mode=True,
+            practical_mode=args.practical,
             persona=args.persona,
             domain=domain_context,
             challenger_idx=challenger_idx,
@@ -771,6 +775,7 @@ Session management:
                     social_mode=social_mode,
                     persona=args.persona,
                     verbose=not args.quiet,
+                    cost_accumulator=cli_cost_accumulator,
                 )
                 transcript += "\n\n" + followup_transcript
 
@@ -792,7 +797,8 @@ Session management:
 
         # Council uses transcript (may include followup), not result.transcript directly
         from .models import SessionResult
-        final_result = SessionResult(transcript, result.cost, result.duration)
+        total_cost = result.cost + round(sum(cli_cost_accumulator), 4)
+        final_result = SessionResult(transcript, total_cost, result.duration)
         _finish_session(args, args.question, final_result, "council",
             header_extra=header_lines, history_extra=history_extra)
 
