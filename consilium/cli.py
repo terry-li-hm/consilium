@@ -177,6 +177,10 @@ def _finish_session(
         header_extra=header_extra,
         no_save=args.no_save, output=args.output, quiet=args.quiet)
     gist_url = _share_gist(question, result.transcript, mode) if args.share else None
+    if result.failures:
+        if history_extra is None:
+            history_extra = {}
+        history_extra["failures"] = result.failures
     _log_history(question, mode, session_path, gist_url, history_extra,
         cost=result.cost, duration=result.duration)
     sys.exit(0)

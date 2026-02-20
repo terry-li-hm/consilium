@@ -689,4 +689,7 @@ If the synthesis is genuinely strong, say so briefly — but try hard to find so
     if verbose:
         print(f"({duration:.1f}s, ~${total_cost:.2f})")
 
-    return SessionResult(transcript=transcript, cost=total_cost, duration=duration)
+    return SessionResult(
+        transcript=transcript, cost=total_cost, duration=duration,
+        failures=failed_models if failed_models else None,
+    )

@@ -16,6 +16,7 @@ class SessionResult:
     transcript: str
     cost: float
     duration: float
+    failures: list[str] | None = None  # Model failure descriptions, if any
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 GOOGLE_AI_STUDIO_URL = "https://generativelanguage.googleapis.com/v1beta/models"
