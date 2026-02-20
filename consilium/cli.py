@@ -19,6 +19,7 @@ MODE_TITLES = {
     "oxford": "Oxford Debate",
     "solo": "Solo Council",
     "council": "Council Deliberation",
+    "deep": "Deep Council",
 }
 
 
@@ -251,6 +252,7 @@ Session management:
     parser.add_argument("--solo", action="store_true", help="Solo council: Claude debates itself")
     parser.add_argument("--socratic", action="store_true", help="Socratic mode: probing questions to expose assumptions")
     parser.add_argument("--oxford", action="store_true", help="Oxford debate: binary for/against with rebuttals and verdict")
+    parser.add_argument("--deep", action="store_true", help="Deep council: full debate + decompose + 2 rounds (~$0.80)")
     parser.add_argument("--motion", help="Override auto-generated debate motion for --oxford")
     parser.add_argument("--roles", help="Custom perspectives for --solo (comma-separated, >= 2)")
     parser.add_argument("--rounds", type=int, default=None, metavar="N", help="Rounds for --discuss or --socratic (0 = unlimited)")
@@ -425,7 +427,7 @@ Session management:
         parser.error("the following arguments are required: question")
 
     # Validate explicit mode flags (mutually exclusive check only — full validation after auto-routing)
-    mode_flags = [f for f in ["--quick", "--council", "--discuss", "--redteam", "--solo", "--socratic", "--oxford"] if getattr(args, f.lstrip("-"))]
+    mode_flags = [f for f in ["--quick", "--council", "--discuss", "--redteam", "--solo", "--socratic", "--oxford", "--deep"] if getattr(args, f.lstrip("-"))]
     if len(mode_flags) > 1:
         parser.error(f"{' and '.join(mode_flags)} are mutually exclusive")
 
@@ -507,7 +509,7 @@ Session management:
 
     # Default: auto-route by question type (unless an explicit mode was chosen)
     auto_mode = None
-    explicit_mode = any(getattr(args, f) for f in ("quick", "council", "discuss", "redteam", "solo", "socratic", "oxford"))
+    explicit_mode = any(getattr(args, f) for f in ("quick", "council", "discuss", "redteam", "solo", "socratic", "oxford", "deep"))
     if not explicit_mode:
         if not args.quiet:
             print("Classifying question...", flush=True)
@@ -706,6 +708,13 @@ Session management:
                 header_extra=f"**Model:** Claude ({roles_label})")
 
         # Full council mode (explicit --council or auto-routed moderate/complex)
+        # --deep: council + forced decompose + 2 rounds
+        _council_rounds = 1
+        _is_deep = args.deep
+        if args.deep:
+            args.decompose = True
+            _council_rounds = 2
+
         from .council import decompose_question, run_council, run_followup_discussion
 
         if not args.quiet:
@@ -746,7 +755,7 @@ Session management:
             council_config=COUNCIL,
             api_key=api_key,
             google_api_key=google_api_key,
-            rounds=1,
+            rounds=_council_rounds,
             verbose=not args.quiet,
             anonymous=True,
             blind=True,
@@ -784,7 +793,8 @@ Session management:
                 )
                 transcript += "\n\n" + followup_transcript
 
-        mode_label = f"anonymous, blind{', social' if social_mode else ''}{f', auto-routed' if auto_mode else ''}{', collabeval' if use_collabeval else ''}{', no-judge' if args.no_judge else ''}"
+        _mode_prefix = "deep, " if _is_deep else ""
+        mode_label = f"{_mode_prefix}anonymous, blind{', social' if social_mode else ''}{f', auto-routed' if auto_mode else ''}{', collabeval' if use_collabeval else ''}{', no-judge' if args.no_judge else ''}"
         header_lines = f"**Mode:** {mode_label}"
         if args.context:
             header_lines += f"\n**Context:** {args.context}"
@@ -804,7 +814,7 @@ Session management:
         from .models import SessionResult
         total_cost = result.cost + round(sum(cli_cost_accumulator), 4)
         final_result = SessionResult(transcript, total_cost, result.duration)
-        _finish_session(args, args.question, final_result, "council",
+        _finish_session(args, args.question, final_result, "deep" if _is_deep else "council",
             header_extra=header_lines, history_extra=history_extra)
 
     except Exception as e:
