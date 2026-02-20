@@ -138,7 +138,7 @@ You're {name}. Find specific, concrete failure modes in the plan/decision below.
 The host identified these attack vectors:
 {host_analysis}
 
-Pick the vector you can hit hardest, or find one the host missed. Be adversarial, not constructive."""
+Pick the vector you can hit hardest, AND find at least one vulnerability the host did NOT identify. Be adversarial, not constructive."""
 
 REDTEAM_HOST_DEEPEN = """You're hosting the red team. You've seen the initial attacks.
 

@@ -261,7 +261,7 @@ def run_redteam(
 
     host_triage = query_model(
         api_key, host_model, triage_messages,
-        max_tokens=800, stream=verbose, cost_accumulator=cost_accumulator,
+        max_tokens=1200, stream=verbose, cost_accumulator=cost_accumulator,
     )
 
     if verbose:
