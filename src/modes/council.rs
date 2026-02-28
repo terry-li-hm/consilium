@@ -25,20 +25,20 @@ static BULLET_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*(?:[-*]|\d+[.)])\s*").unwrap());
 
 static RE_RECOMMENDATION: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)## Recommendation[^\n]*\n(.*?)(?=\n## |\z)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?s)## Recommendation[^\n]*\n(.*?)(?:\n## |\z)").unwrap());
 static RE_DO_NOW: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)### Do Now[^\n]*\n(.*?)(?=\n### |\z)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?s)### Do Now[^\n]*\n(.*?)(?:\n### |\z)").unwrap());
 static RE_DO_NOW_BOLD: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\*\*\d+\.\s*(.+?)\*\*").unwrap());
 static RE_CONSIDER: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)### Consider Later[^\n]*\n(.*?)(?=\n### |\z)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?s)### Consider Later[^\n]*\n(.*?)(?:\n### |\z)").unwrap());
 static RE_SKIP: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)### Skip[^\n]*\n(.*?)(?=\n### |\n---|\z)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?s)### Skip[^\n]*\n(.*?)(?:\n### |\n---|\z)").unwrap());
 static RE_BULLET_BOLD: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^[-*]\s+\*\*(.+?)\*\*").unwrap());
 
 static RE_SYNTHESIS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)## Synthesis[^\n]*\n(.*?)(?=\n## |\z)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?s)## Synthesis[^\n]*\n(.*?)(?:\n## |\z)").unwrap());
 
 #[derive(Debug, Clone, Default)]
 struct RecommendationItems {

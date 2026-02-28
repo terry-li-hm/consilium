@@ -26,7 +26,7 @@ pub enum LineType {
 static SEPARATOR_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^={50,}$").unwrap());
 static MODEL_HEADER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^### (.+)").unwrap());
 static SECTION_HEADER_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^## (?!#)(.+)").unwrap());
+    LazyLock::new(|| Regex::new(r"^## ([^#].*)").unwrap());
 static NOTICE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^>>> (.+)").unwrap());
 static STATS_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\(\d+\.\d+s,\s*~?\$[\d.]+\)$").unwrap());
