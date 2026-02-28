@@ -24,6 +24,7 @@ pub async fn run_discuss(
     _format: &str,
     timeout: f64,
     output: &mut dyn Output,
+    _thorough: bool,
 ) -> SessionResult {
     let start = Instant::now();
     let cost_tracker = CostTracker::new();

@@ -153,6 +153,14 @@ pub struct Cli {
     /// Print version
     #[arg(long)]
     pub version_flag: bool,
+
+    /// Prompt for session rating (1-5) after completion
+    #[arg(long)]
+    pub feedback: bool,
+
+    /// Skip early consensus exit and context compression (full deliberation)
+    #[arg(long)]
+    pub thorough: bool,
 }
 
 impl Cli {

@@ -62,6 +62,15 @@ pub fn list_sessions() {
     }
 }
 
+fn calculate_percentile(mut values: Vec<f64>, percentile: f64) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let idx = ((values.len() as f64 * percentile / 100.0).floor() as usize).min(values.len() - 1);
+    Some(values[idx])
+}
+
 pub fn show_stats() {
     let history_file = get_sessions_dir()
         .parent()
@@ -106,31 +115,25 @@ pub fn show_stats() {
         by_mode.entry(mode).or_default().push(entry);
     }
 
-    let first = entries[0]
-        .get("timestamp")
-        .and_then(|v| v.as_str())
-        .map(|s| &s[..10])
-        .unwrap_or("?");
-    let last = entries
-        .last()
-        .and_then(|e| e.get("timestamp"))
-        .and_then(|v| v.as_str())
-        .map(|s| &s[..10])
-        .unwrap_or("?");
+    let total_cost: f64 = entries
+        .iter()
+        .filter_map(|e| e.get("cost").and_then(|v| v.as_f64()))
+        .sum();
 
-    println!("Consilium Stats ({} sessions, {} — {})
-", entries.len(), first, last);
     println!(
-        "{:<14} {:>8} {:>10} {:>12} {:>10}",
-        "Mode", "Sessions", "Avg Cost", "Total Cost", "Avg Time"
+        "consilium stats — {} sessions, ${:.2} total\n",
+        entries.len(),
+        total_cost
     );
 
-    let mut total_cost = 0.0;
-    let mut sorted_modes: Vec<_> = by_mode.keys().collect();
-    sorted_modes.sort();
+    let mut mode_stats: Vec<(&String, &Vec<&Value>)> = by_mode.iter().collect();
+    mode_stats.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
 
-    for mode in sorted_modes {
-        let mode_entries = by_mode.get(mode).unwrap();
+    println!("By mode (sorted by usage):");
+
+    let mut all_feedbacks: Vec<u8> = Vec::new();
+
+    for (mode, mode_entries) in &mode_stats {
         let count = mode_entries.len();
         let costs: Vec<f64> = mode_entries
             .iter()
@@ -141,61 +144,92 @@ pub fn show_stats() {
             .filter_map(|e| e.get("duration").and_then(|v| v.as_f64()))
             .collect();
 
-        let avg_cost_str = if !costs.is_empty() {
-            format!("${:.2}", costs.iter().sum::<f64>() / costs.len() as f64)
+        let avg_cost = if !costs.is_empty() {
+            costs.iter().sum::<f64>() / costs.len() as f64
         } else {
-            "—".to_string()
+            0.0
         };
         let sum_cost = costs.iter().sum::<f64>();
-        total_cost += sum_cost;
-        let total_cost_str = if !costs.is_empty() {
-            format!("${:.2}", sum_cost)
+
+        let p50 = calculate_percentile(durations.clone(), 50.0);
+        let p95 = calculate_percentile(durations.clone(), 95.0);
+
+        let mode_feedbacks: Vec<u8> = mode_entries
+            .iter()
+            .filter_map(|e| e.get("feedback").and_then(|v| v.as_u64()).map(|v| v as u8))
+            .filter(|&v| (1..=5).contains(&v))
+            .collect();
+        all_feedbacks.extend(&mode_feedbacks);
+
+        let feedback_str = if !mode_feedbacks.is_empty() {
+            let avg: f64 = mode_feedbacks.iter().sum::<u8>() as f64 / mode_feedbacks.len() as f64;
+            format!("  ★{:.1}", avg)
         } else {
-            "—".to_string()
-        };
-        let avg_dur_str = if !durations.is_empty() {
-            format!("{:.0}s", durations.iter().sum::<f64>() / durations.len() as f64)
-        } else {
-            "—".to_string()
+            String::new()
         };
 
+        let p50_str = p50.map_or("—".to_string(), |v| format!("{:.0}s p50", v));
+        let p95_str = p95.map_or("—".to_string(), |v| format!("{:.0}s p95", v));
+
         println!(
-            "{:<14} {:>8} {:>10} {:>12} {:>10}",
-            mode, count, avg_cost_str, total_cost_str, avg_dur_str
+            "  {:<12} {:>3} sessions  ${:.2} avg  ${:.2} total  {:>10}  {:>10}{}",
+            mode, count, avg_cost, sum_cost, p50_str, p95_str, feedback_str
         );
     }
 
-    println!(
-        "
-{:<14} {:>8} {:>10} ${:>11.2}",
-        "Total",
-        entries.len(),
-        "",
-        total_cost
-    );
-
     let now = Local::now();
-    let cutoff = now - chrono::Duration::days(7);
-    let recent: Vec<_> = entries
+    let cutoff_7d = now - chrono::Duration::days(7);
+    let cutoff_30d = now - chrono::Duration::days(30);
+
+    let recent_7d: Vec<_> = entries
         .iter()
         .filter(|e| {
             e.get("timestamp")
                 .and_then(|v| v.as_str())
                 .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                .map(|dt| dt.with_timezone(&Local) >= cutoff)
+                .map(|dt| dt.with_timezone(&Local) >= cutoff_7d)
                 .unwrap_or(false)
         })
         .collect();
-    let recent_cost: f64 = recent
+
+    let recent_30d: Vec<_> = entries
+        .iter()
+        .filter(|e| {
+            e.get("timestamp")
+                .and_then(|v| v.as_str())
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&Local) >= cutoff_30d)
+                .unwrap_or(false)
+        })
+        .collect();
+
+    let cost_7d: f64 = recent_7d
         .iter()
         .filter_map(|e| e.get("cost").and_then(|v| v.as_f64()))
         .sum();
+
+    let cost_30d: f64 = recent_30d
+        .iter()
+        .filter_map(|e| e.get("cost").and_then(|v| v.as_f64()))
+        .sum();
+
+    println!();
+    println!("Last 7 days: {} sessions, ${:.2}", recent_7d.len(), cost_7d);
     println!(
-        "
-Last 7 days: {} sessions, ${:.2}",
-        recent.len(),
-        recent_cost
+        "Last 30 days: {} sessions, ${:.2}",
+        recent_30d.len(),
+        cost_30d
     );
+
+    if !all_feedbacks.is_empty() {
+        let avg_feedback: f64 =
+            all_feedbacks.iter().sum::<u8>() as f64 / all_feedbacks.len() as f64;
+        println!(
+            "\nFeedback: {:.1} avg ({} rated sessions)",
+            avg_feedback,
+            all_feedbacks.len()
+        );
+    }
 }
 
 pub fn view_session(term: Option<&str>) {
@@ -232,8 +266,11 @@ pub fn view_session(term: Option<&str>) {
 
         if !matches.is_empty() {
             if matches.len() > 1 {
-                println!("({} matches, showing most recent)
-", matches.len());
+                println!(
+                    "({} matches, showing most recent)
+",
+                    matches.len()
+                );
             }
             matches[0].path()
         } else {
@@ -251,8 +288,11 @@ pub fn view_session(term: Option<&str>) {
             }
             if !content_matches.is_empty() {
                 if content_matches.len() > 1 {
-                    println!("({} matches, showing most recent)
-", content_matches.len());
+                    println!(
+                        "({} matches, showing most recent)
+",
+                        content_matches.len()
+                    );
                 }
                 content_matches[0].clone()
             } else {
@@ -306,8 +346,11 @@ pub fn search_sessions(term: &str) {
     if matches.is_empty() {
         println!("No sessions matching '{}'.", term);
     } else {
-        println!("Sessions matching '{}':
-", term);
+        println!(
+            "Sessions matching '{}':
+",
+            term
+        );
         for (entry, content) in matches.iter().take(20) {
             let metadata = entry.metadata().ok();
             let mtime: String = metadata
@@ -335,8 +378,11 @@ pub fn search_sessions(term: &str) {
             println!("  {}  {}", mtime, question);
         }
         if matches.len() > 20 {
-            println!("
-  ... and {} more", matches.len() - 20);
+            println!(
+                "
+  ... and {} more",
+                matches.len() - 20
+            );
         }
     }
 }

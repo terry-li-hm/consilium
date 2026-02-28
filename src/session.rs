@@ -20,7 +20,11 @@ pub trait Output: Send + Sync {
     fn flush(&mut self) -> io::Result<()>;
 }
 
-fn render_colored_line(out: &mut impl Write, line: &str, prev_type: Option<LineType>) -> io::Result<()> {
+fn render_colored_line(
+    out: &mut impl Write,
+    line: &str,
+    prev_type: Option<LineType>,
+) -> io::Result<()> {
     let line_type = classify(line, prev_type);
     let stripped = line.trim();
 
@@ -29,22 +33,54 @@ fn render_colored_line(out: &mut impl Write, line: &str, prev_type: Option<LineT
             writeln!(out, "{}", "─".repeat(60).with(Color::DarkGrey))?;
         }
         LineType::PhaseBanner => {
-            writeln!(out, "{}", format!(" {stripped} ").with(Color::Cyan).attribute(Attribute::Bold))?;
+            writeln!(
+                out,
+                "{}",
+                format!(" {stripped} ")
+                    .with(Color::Cyan)
+                    .attribute(Attribute::Bold)
+            )?;
         }
         LineType::ModelHeader => {
-            writeln!(out, "{}", stripped.trim_start_matches("### ").with(Color::Yellow).attribute(Attribute::Bold))?;
+            writeln!(
+                out,
+                "{}",
+                stripped
+                    .trim_start_matches("### ")
+                    .with(Color::Yellow)
+                    .attribute(Attribute::Bold)
+            )?;
         }
         LineType::SectionHeader => {
-            writeln!(out, "{}", stripped.trim_start_matches("## ").with(Color::Blue).attribute(Attribute::Bold))?;
+            writeln!(
+                out,
+                "{}",
+                stripped
+                    .trim_start_matches("## ")
+                    .with(Color::Blue)
+                    .attribute(Attribute::Bold)
+            )?;
         }
         LineType::Notice => {
-            writeln!(out, "{}", stripped.with(Color::Green).attribute(Attribute::Bold))?;
+            writeln!(
+                out,
+                "{}",
+                stripped.with(Color::Green).attribute(Attribute::Bold)
+            )?;
         }
         LineType::Status => {
-            writeln!(out, "{}", stripped.with(Color::DarkGrey).attribute(Attribute::Italic))?;
+            writeln!(
+                out,
+                "{}",
+                stripped.with(Color::DarkGrey).attribute(Attribute::Italic)
+            )?;
         }
         LineType::Confidence => {
-            writeln!(out, "{}", stripped.with(Color::Magenta).attribute(Attribute::Bold))?;
+            writeln!(
+                out,
+                "{}",
+                stripped.with(Color::Magenta).attribute(Attribute::Bold)
+            )?;
         }
         LineType::Stats => {
             writeln!(out, "{}", stripped.with(Color::DarkGrey))?;
@@ -66,7 +102,12 @@ pub struct StdoutOutput {
 
 impl StdoutOutput {
     pub fn new(color: bool) -> Self {
-        Self { color, line_buf: String::new(), prev_type: None, flushed_partial: false }
+        Self {
+            color,
+            line_buf: String::new(),
+            prev_type: None,
+            flushed_partial: false,
+        }
     }
 }
 
@@ -122,7 +163,13 @@ pub struct TeeOutput {
 impl TeeOutput {
     pub fn new(path: &Path, color: bool) -> io::Result<Self> {
         let file = fs::File::create(path)?;
-        Ok(Self { file, color, line_buf: String::new(), prev_type: None, flushed_partial: false })
+        Ok(Self {
+            file,
+            color,
+            line_buf: String::new(),
+            prev_type: None,
+            flushed_partial: false,
+        })
     }
 }
 
@@ -189,7 +236,9 @@ pub fn setup_live_output(quiet: bool, color: bool) -> Box<dyn Output> {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if name.starts_with("live-") && name.ends_with(".md") && path != live_pid_path {
                     // Try to parse PID
-                    if let Some(old_pid_str) = name.strip_prefix("live-").and_then(|s| s.strip_suffix(".md"))
+                    if let Some(old_pid_str) = name
+                        .strip_prefix("live-")
+                        .and_then(|s| s.strip_suffix(".md"))
                     {
                         if let Ok(old_pid) = old_pid_str.parse::<i32>() {
                             // Check if process is alive (signal 0)
@@ -492,4 +541,54 @@ pub fn finish_session(
     );
 
     session_path
+}
+
+pub fn append_feedback_to_history(rating: u8) {
+    let history_file = get_sessions_dir()
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("history.jsonl");
+
+    let content = match fs::read_to_string(&history_file) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Failed to read history file: {e}");
+            return;
+        }
+    };
+
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() {
+        return;
+    }
+
+    let last_line = lines[lines.len() - 1];
+    let mut entry = match serde_json::from_str::<Value>(last_line) {
+        Ok(Value::Object(m)) => m,
+        _ => {
+            eprintln!("Failed to parse last history entry");
+            return;
+        }
+    };
+
+    entry.insert("feedback".to_string(), Value::Number(rating.into()));
+
+    let updated_line = match serde_json::to_string(&Value::Object(entry)) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to serialize updated entry: {e}");
+            return;
+        }
+    };
+
+    let new_content = if lines.len() == 1 {
+        format!("{updated_line}\n")
+    } else {
+        let prefix = lines[..lines.len() - 1].join("\n");
+        format!("{prefix}\n{updated_line}\n")
+    };
+
+    if let Err(e) = fs::write(&history_file, new_content) {
+        eprintln!("Failed to write history file: {e}");
+    }
 }

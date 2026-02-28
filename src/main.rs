@@ -6,7 +6,7 @@ use consilium::config::{
     discuss_models, oxford_models, quick_models, redteam_models, CostTracker, COUNCIL, JUDGE_MODEL,
 };
 use consilium::modes::{council, discuss, oxford, quick, redteam, solo};
-use consilium::session::{finish_session, setup_live_output};
+use consilium::session::{append_feedback_to_history, finish_session, setup_live_output};
 use std::io::IsTerminal;
 
 #[tokio::main]
@@ -150,6 +150,7 @@ async fn main() {
                 &args.format,
                 args.timeout,
                 &mut *output,
+                args.thorough,
             )
             .await
         }
@@ -212,6 +213,7 @@ async fn main() {
                 sub_questions,
                 args.xpol,
                 args.followup,
+                args.thorough,
             )
             .await
         }
@@ -232,6 +234,19 @@ async fn main() {
         args.quiet,
         None,
     );
+
+    if args.feedback {
+        eprint!("Rate this session (1-5): ");
+        let mut input = String::new();
+        use std::io::BufRead;
+        if std::io::stdin().lock().read_line(&mut input).is_ok() {
+            if let Ok(rating) = input.trim().parse::<u8>() {
+                if (1..=5).contains(&rating) {
+                    append_feedback_to_history(rating);
+                }
+            }
+        }
+    }
 
     std::process::exit(0);
 }

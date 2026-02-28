@@ -8,7 +8,7 @@ fn test_version() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("--version-flag");
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("consilium 0.1.3"));
+        .stdout(predicate::str::contains("consilium 0.1.4"));
     Ok(())
 }
 
@@ -40,6 +40,8 @@ fn test_help_includes_examples() -> Result<(), Box<dyn std::error::Error>> {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("Examples:"))
-        .stdout(predicate::str::contains("consilium \"Should I take this job offer?\""));
+        .stdout(predicate::str::contains(
+            "consilium \"Should I take this job offer?\"",
+        ));
     Ok(())
 }

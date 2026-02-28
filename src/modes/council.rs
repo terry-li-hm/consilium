@@ -550,6 +550,7 @@ pub async fn run_council(
     sub_questions: Option<Vec<String>>,
     cross_pollinate: bool,
     followup: bool,
+    thorough: bool,
 ) -> SessionResult {
     let start = Instant::now();
     let client = Client::new();
@@ -820,11 +821,13 @@ pub async fn run_council(
             ));
         }
 
-        let (converged, reason) =
-            detect_consensus(&conversation, council_config, Some(current_challenger));
-        if converged {
-            let _ = output.write_str(&format!(">>> CONSENSUS DETECTED ({reason}) - proceeding to judge\n\n"));
-            break;
+        if !thorough {
+            let (converged, reason) =
+                detect_consensus(&conversation, council_config, Some(current_challenger));
+            if converged {
+                let _ = output.write_str(&format!(">>> CONSENSUS DETECTED ({reason}) - proceeding to judge\n\n"));
+                break;
+            }
         }
     }
 
