@@ -1,6 +1,6 @@
 [package]
 name = "consilium"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Multi-model deliberation CLI — 5 frontier LLMs debate, then Claude judges"
 license = "MIT"
@@ -11,6 +11,10 @@ categories = ["command-line-utilities"]
 
 [[bin]]
 name = "consilium"
+path = "src/main.rs"
+
+[[bin]]
+name = "consi"
 path = "src/main.rs"
 
 [dependencies]
