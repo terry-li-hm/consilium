@@ -1,6 +1,8 @@
+use crate::config::OPENROUTER_URL;
 use crate::prompts;
 use crate::session::get_sessions_dir;
 use chrono::{DateTime, Local};
+use crossterm::style::{Color, Stylize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -384,5 +386,123 @@ pub fn search_sessions(term: &str) {
                 matches.len() - 20
             );
         }
+    }
+}
+
+pub async fn run_doctor(client: &reqwest::Client) {
+    let mut all_passed = true;
+
+    println!("consilium diagnostics\n");
+
+    // Check OPENROUTER_API_KEY
+    let openrouter_key = std::env::var("OPENROUTER_API_KEY");
+    match openrouter_key {
+        Ok(ref key) if !key.trim().is_empty() => {
+            println!(
+                "  {} OPENROUTER_API_KEY is set",
+                "✓".to_string().with(Color::Green)
+            );
+        }
+        _ => {
+            println!(
+                "  {} OPENROUTER_API_KEY not set",
+                "✗".to_string().with(Color::Red)
+            );
+            all_passed = false;
+        }
+    }
+
+    // Check GOOGLE_API_KEY (optional)
+    let google_key = std::env::var("GOOGLE_API_KEY");
+    match google_key {
+        Ok(ref key) if !key.trim().is_empty() => {
+            println!(
+                "  {} GOOGLE_API_KEY is set",
+                "✓".to_string().with(Color::Green)
+            );
+        }
+        _ => {
+            println!(
+                "  {} GOOGLE_API_KEY not set (optional, Gemini fallback disabled)",
+                "○".to_string().with(Color::Yellow)
+            );
+        }
+    }
+
+    // Check session directory
+    let sessions_dir = get_sessions_dir();
+    if sessions_dir.exists() {
+        println!(
+            "  {} Session directory exists ({})",
+            "✓".to_string().with(Color::Green),
+            sessions_dir.display()
+        );
+    } else {
+        match fs::create_dir_all(&sessions_dir) {
+            Ok(_) => {
+                println!(
+                    "  {} Session directory created ({})",
+                    "✓".to_string().with(Color::Green),
+                    sessions_dir.display()
+                );
+            }
+            Err(e) => {
+                println!(
+                    "  {} Failed to create session directory: {}",
+                    "✗".to_string().with(Color::Red),
+                    e
+                );
+                all_passed = false;
+            }
+        }
+    }
+
+    // Test API call to OpenRouter
+    let api_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_default();
+    if !api_key.trim().is_empty() {
+        print!("  Testing OpenRouter API connection... ");
+        let result = client
+            .post(OPENROUTER_URL)
+            .header("Authorization", format!("Bearer {api_key}"))
+            .json(&serde_json::json!({
+                "model": "meta-llama/llama-3.3-70b-instruct",
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+            }))
+            .timeout(std::time::Duration::from_secs(30))
+            .send()
+            .await;
+
+        match result {
+            Ok(response) => {
+                let status = response.status();
+                if status == 200 {
+                    println!("{}", "✓ OK".to_string().with(Color::Green));
+                } else if status == 401 {
+                    println!("{}", "✗ Invalid API key".to_string().with(Color::Red));
+                    all_passed = false;
+                } else {
+                    println!(
+                        "{}",
+                        format!("✗ HTTP {}", status).with(Color::Red)
+                    );
+                    all_passed = false;
+                }
+            }
+            Err(e) => {
+                println!("{}", format!("✗ Connection failed: {e}").with(Color::Red));
+                all_passed = false;
+            }
+        }
+    }
+
+    println!();
+    if all_passed {
+        println!("{}", "Ready to deliberate!".to_string().with(Color::Green));
+    } else {
+        println!(
+            "{}",
+            "Fix the issues above before running consilium.".with(Color::Red)
+        );
     }
 }

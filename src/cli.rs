@@ -161,6 +161,10 @@ pub struct Cli {
     /// Skip early consensus exit and context compression (full deliberation)
     #[arg(long)]
     pub thorough: bool,
+
+    /// Run diagnostics (check API keys, connectivity, session directory)
+    #[arg(long)]
+    pub doctor: bool,
 }
 
 impl Cli {
@@ -197,5 +201,6 @@ impl Cli {
             || self.search.is_some()
             || self.list_roles
             || self.version_flag
+            || self.doctor
     }
 }

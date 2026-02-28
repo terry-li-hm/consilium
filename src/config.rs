@@ -195,9 +195,6 @@ pub fn detect_consensus(
         .iter()
         .filter(|&&&(_, text)| text.to_uppercase().contains("CONSENSUS:"))
         .count();
-    if consensus_count >= threshold {
-        return (true, "explicit consensus signals");
-    }
 
     // Check agreement language
     let agreement_phrases = [
@@ -215,8 +212,38 @@ pub fn detect_consensus(
                 .any(|phrase| lower.contains(phrase))
         })
         .count();
-    if agreement_count >= threshold {
-        return (true, "agreement language detected");
+
+    let (potential_consensus, reason) = if consensus_count >= threshold {
+        (true, "explicit consensus signals")
+    } else if agreement_count >= threshold {
+        (true, "agreement language detected")
+    } else {
+        (false, "no consensus")
+    };
+
+    // If consensus reached, ensure the challenger isn't actively dissenting
+    if potential_consensus {
+        if let Some(idx) = current_challenger_idx {
+            let challenger_name = council_config[idx].0.to_lowercase();
+            for msg in &recent {
+                if msg.0.to_lowercase() == challenger_name {
+                    let lower = msg.1.to_lowercase();
+                    let dissent_phrases = [
+                        "i disagree",
+                        "i challenge",
+                        "this is wrong",
+                        "critical flaw",
+                        "fundamental problem",
+                        "overlooking",
+                        "must object",
+                    ];
+                    if dissent_phrases.iter().any(|phrase| lower.contains(phrase)) {
+                        return (false, "challenger actively dissenting");
+                    }
+                }
+            }
+        }
+        return (true, reason);
     }
 
     (false, "no consensus")
@@ -719,5 +746,67 @@ mod tests {
         tracker.add(0.05);
         clone.add(0.10);
         assert!((tracker.total() - 0.15).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_consensus_blocked_by_challenger_dissent() {
+        let conversation = vec![
+            ("GPT".into(), "CONSENSUS: I agree".into()),
+            (
+                "Gemini".into(),
+                "I disagree, there is a critical flaw here.".into(),
+            ),
+            ("Grok".into(), "CONSENSUS: agreed".into()),
+            ("DeepSeek".into(), "CONSENSUS: yes".into()),
+            ("GLM".into(), "CONSENSUS: yes".into()),
+        ];
+        let council = real_council();
+        let (converged, reason) = detect_consensus(&conversation, &council, Some(1));
+        assert!(!converged);
+        assert_eq!(reason, "challenger actively dissenting");
+    }
+
+    #[test]
+    fn test_consensus_allowed_when_challenger_agrees() {
+        let conversation = vec![
+            ("GPT".into(), "CONSENSUS: I agree".into()),
+            ("Gemini".into(), "I agree too, let's proceed.".into()),
+            ("Grok".into(), "CONSENSUS: agreed".into()),
+            ("DeepSeek".into(), "CONSENSUS: yes".into()),
+            ("GLM".into(), "CONSENSUS: yes".into()),
+        ];
+        let council = real_council();
+        let (converged, _) = detect_consensus(&conversation, &council, Some(1));
+        assert!(converged);
+    }
+
+    #[test]
+    fn test_consensus_allowed_no_challenger_idx() {
+        let conversation = vec![
+            ("GPT".into(), "CONSENSUS: I agree".into()),
+            ("Gemini".into(), "I disagree completely!".into()),
+            ("Grok".into(), "CONSENSUS: agreed".into()),
+            ("DeepSeek".into(), "CONSENSUS: yes".into()),
+            ("GLM".into(), "CONSENSUS: yes".into()),
+        ];
+        let council = real_council();
+        // With no challenger idx, Gemini is just one of the models, and 4/5 is above threshold (4)
+        let (converged, _) = detect_consensus(&conversation, &council, None);
+        assert!(converged);
+    }
+
+    #[test]
+    fn test_challenger_dissent_case_insensitive() {
+        let conversation = vec![
+            ("GPT".into(), "CONSENSUS: I agree".into()),
+            ("Gemini".into(), "I CHALLENGE this approach.".into()),
+            ("Grok".into(), "CONSENSUS: agreed".into()),
+            ("DeepSeek".into(), "CONSENSUS: yes".into()),
+            ("GLM".into(), "CONSENSUS: yes".into()),
+        ];
+        let council = real_council();
+        let (converged, reason) = detect_consensus(&conversation, &council, Some(1));
+        assert!(!converged);
+        assert_eq!(reason, "challenger actively dissenting");
     }
 }

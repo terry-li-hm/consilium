@@ -13,6 +13,12 @@ Multi-model deliberation CLI. 5 frontier LLMs debate your question, then Claude 
 
 Auto-routes by difficulty: simple questions get quick parallel queries (~$0.10), complex ones get full council deliberation (~$0.50).
 
+## Why multi-model?
+
+Research shows multi-model collaboration produces **18.5% better outcomes** than any single model working alone, through a mechanism called collaborative emergence — models surface insights that no individual model would reach. consilium's structured deliberation (blind → debate → judge) is designed to maximize this effect.
+
+Paper: [Model Collaboration](https://arxiv.org/html/2601.21257v1) (Feng et al., 2025)
+
 ## Models
 
 | Role | Model |
@@ -116,6 +122,7 @@ consilium --view "career"   # View session matching term
 consilium --search "AI"     # Search session content
 consilium --watch           # Live tail (styled terminal)
 consilium --tui             # Full TUI viewer
+consilium --doctor          # Check API keys and connectivity
 consilium --list-roles      # Predefined roles for --solo
 ```
 

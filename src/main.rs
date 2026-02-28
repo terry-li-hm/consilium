@@ -63,6 +63,12 @@ async fn main() {
         std::process::exit(0);
     }
 
+    if args.doctor {
+        let doctor_client = reqwest::Client::new();
+        admin::run_doctor(&doctor_client).await;
+        std::process::exit(0);
+    }
+
     let question = match &args.question {
         Some(q) => q.clone(),
         None => {
