@@ -1,9 +1,9 @@
 use clap::Parser;
 use consilium::cli::Cli;
 use consilium::config::{
-    discuss_models, oxford_models, quick_models, redteam_models, JUDGE_MODEL,
+    discuss_models, oxford_models, quick_models, redteam_models, CostTracker, COUNCIL, JUDGE_MODEL,
 };
-use consilium::modes::{discuss, oxford, quick, redteam, solo};
+use consilium::modes::{council, discuss, oxford, quick, redteam, solo};
 use consilium::session::finish_session;
 
 #[tokio::main]
@@ -103,8 +103,53 @@ async fn main() {
             .await
         }
         "council" => {
-            eprintln!("Council mode not yet implemented in this phase.");
-            std::process::exit(1);
+            let rounds = if args.deep {
+                args.rounds.max(2)
+            } else {
+                args.rounds
+            };
+            let should_decompose = args.decompose || args.deep;
+
+            let sub_questions = if should_decompose {
+                let decompose_cost = CostTracker::new();
+                Some(
+                    council::decompose_question(&question, &api_key, !args.quiet, &decompose_cost)
+                        .await,
+                )
+            } else {
+                None
+            };
+
+            let challenger_idx = args.challenger.as_ref().and_then(|target| {
+                let target = target.to_lowercase();
+                COUNCIL.iter().position(|(name, model, _)| {
+                    name.to_lowercase() == target
+                        || model.split('/').last().unwrap_or(model).to_lowercase() == target
+                        || model.to_lowercase() == target
+                })
+            });
+
+            council::run_council(
+                &question,
+                COUNCIL,
+                &api_key,
+                google_api_key.as_deref(),
+                rounds,
+                !args.quiet,
+                true,
+                true,
+                args.context.as_deref(),
+                args.persona.as_deref(),
+                args.domain.as_deref(),
+                challenger_idx,
+                &args.format,
+                !args.no_judge,
+                !args.no_judge,
+                sub_questions,
+                args.xpol,
+                args.followup,
+            )
+            .await
         }
         _ => {
             eprintln!("Mode '{mode}' not implemented.");

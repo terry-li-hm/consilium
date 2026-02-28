@@ -15,11 +15,14 @@ pub struct SessionResult {
 
 /// Model entry: (display_name, openrouter_model, fallback).
 /// Fallback is (provider, model) — currently only "google" provider supported.
-pub type ModelEntry = (&'static str, &'static str, Option<(&'static str, &'static str)>);
+pub type ModelEntry = (
+    &'static str,
+    &'static str,
+    Option<(&'static str, &'static str)>,
+);
 
 pub const OPENROUTER_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
-pub const GOOGLE_AI_STUDIO_URL: &str =
-    "https://generativelanguage.googleapis.com/v1beta/models";
+pub const GOOGLE_AI_STUDIO_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
 // Council: 5 panelists (Claude is judge-only to avoid conflict of interest)
 pub const COUNCIL: &[ModelEntry] = &[
@@ -134,7 +137,11 @@ pub fn parse_confidence(response: &str) -> Option<u8> {
     });
     RE.captures(response).and_then(|caps| {
         let value: u8 = caps[1].parse().ok()?;
-        if value <= 10 { Some(value) } else { None }
+        if value <= 10 {
+            Some(value)
+        } else {
+            None
+        }
     })
 }
 
@@ -163,7 +170,10 @@ pub fn detect_consensus(
     // Exclude challenger from consensus count
     let filtered: Vec<&&(String, String)> = if let Some(idx) = current_challenger_idx {
         let challenger_name = council_config[idx].0;
-        recent.iter().filter(|&&(name, _)| name != challenger_name).collect()
+        recent
+            .iter()
+            .filter(|&&(name, _)| name != challenger_name)
+            .collect()
     } else {
         recent.iter().collect()
     };
@@ -173,7 +183,11 @@ pub fn detect_consensus(
         return (false, "no non-challenger responses");
     }
 
-    let threshold = if effective_size <= 1 { 1 } else { effective_size - 1 };
+    let threshold = if effective_size <= 1 {
+        1
+    } else {
+        effective_size - 1
+    };
 
     // Check explicit CONSENSUS: signals
     let consensus_count = filtered
@@ -185,12 +199,19 @@ pub fn detect_consensus(
     }
 
     // Check agreement language
-    let agreement_phrases = ["i agree with", "i concur", "we all agree", "consensus emerging"];
+    let agreement_phrases = [
+        "i agree with",
+        "i concur",
+        "we all agree",
+        "consensus emerging",
+    ];
     let agreement_count = filtered
         .iter()
         .filter(|&&&&(_, ref text)| {
             let lower = text.to_lowercase();
-            agreement_phrases.iter().any(|phrase| lower.contains(phrase))
+            agreement_phrases
+                .iter()
+                .any(|phrase| lower.contains(phrase))
         })
         .count();
     if agreement_count >= threshold {
@@ -315,7 +336,9 @@ mod tests {
     fn test_error_response() {
         assert!(is_error_response("[Error: Connection failed]"));
         assert!(is_error_response("[No response from model]"));
-        assert!(is_error_response("[Model still thinking - needs more tokens]"));
+        assert!(is_error_response(
+            "[Model still thinking - needs more tokens]"
+        ));
     }
 
     #[test]
@@ -466,7 +489,10 @@ mod tests {
     #[test]
     fn test_consensus_explicit_all() {
         let conversation = vec![
-            ("model1".into(), "I agree with that.\nCONSENSUS: Yes.".into()),
+            (
+                "model1".into(),
+                "I agree with that.\nCONSENSUS: Yes.".into(),
+            ),
             ("model2".into(), "CONSENSUS: Fully agreed.".into()),
             ("model3".into(), "CONSENSUS: No issues.".into()),
         ];
@@ -553,10 +579,7 @@ mod tests {
 
     #[test]
     fn test_consensus_single_speaker() {
-        let conversation = vec![(
-            "model1".into(),
-            "I agree.\nCONSENSUS: Yes.".into(),
-        )];
+        let conversation = vec![("model1".into(), "I agree.\nCONSENSUS: Yes.".into())];
         let council = make_council(1);
         let (converged, _) = detect_consensus(&conversation, &council, None);
         assert!(converged);
