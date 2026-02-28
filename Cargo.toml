@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Multi-model deliberation CLI"
 license = "MIT"
-repository = "https://github.com/terry-li-hm/consilium-rs"
+repository = "https://github.com/terry-li-hm/consilium"
 
 [[bin]]
 name = "consilium"
