@@ -70,9 +70,21 @@ Key test categories:
 - SSE parsing (5 cases)
 - CLI flag parsing (4 integration tests)
 
+## Release workflow
+
+1. Bump version in `Cargo.toml`
+2. Update version string in `tests/cli_test.rs`
+3. `cargo clippy && cargo test`
+4. `cargo build --release`
+5. Commit, push, `cargo publish`
+6. Site: if landing page needs update, edit `consilium-site/public/index.html`, push (Vercel auto-deploys)
+
 ## Delegation notes
 
 This codebase was built via delegation to Codex and Gemini CLI. When delegating future work:
 - Provide the `llms.txt` file for context
 - Delegates commonly generate Python-style `(?=...)` lookahead regex — always `cargo clippy` after
 - The `Output` trait (`&mut dyn Output`) threads through all mode functions — new modes must accept it
+- Tasks touching different files can run in parallel; same-file tasks must be phased
+- Gemini tends to touch more files than asked (bonus clippy fixes, global allows) — review diff scope
+- Delegates don't write tests unless explicitly tasked — make it a separate delegation if needed
