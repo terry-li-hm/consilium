@@ -576,7 +576,7 @@ Return ONLY valid JSON (no markdown fences) matching this schema:
 }
 
 Rules:
-- decision: summarize the Synthesis into what should actually be done, not a section heading
+- decision: A concrete 1-2 sentence recommendation of what to DO. Must be actionable prose — NOT a section heading, NOT "Do Now", NOT "Consider Later", NOT a list header. Extract from the Recommendation or Synthesis section. If it lists items, summarise into "Do X first, then Y."
 - winning_hypothesis: which H was endorsed or closest to the final position
 - dissents: unresolved disagreements from Points of Disagreement with the speaker who raised them
 - If no content for a field, use "" or []"#;

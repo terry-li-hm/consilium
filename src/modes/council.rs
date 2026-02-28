@@ -226,7 +226,19 @@ pub async fn extract_structured_summary(
         let decision = fallback_source
             .lines()
             .map(str::trim)
-            .find(|line| !line.is_empty() && line.len() > 30 && !line.starts_with('#'))
+            .find(|line| {
+                !line.is_empty()
+                    && line.len() > 30
+                    && !line.starts_with('#')
+                    && !line.starts_with('*')
+                    && !line.starts_with('-')
+                    && !line.starts_with("**Do")
+                    && !line.starts_with("**Consider")
+                    && !line.starts_with("**Skip")
+                    && !line.to_lowercase().starts_with("do now")
+                    && !line.to_lowercase().starts_with("consider")
+                    && !line.to_lowercase().starts_with("recommendation")
+            })
             .unwrap_or("See transcript for details")
             .chars()
             .take(500)
@@ -1154,7 +1166,9 @@ pub async fn run_council(
                 serde_yaml::to_string(&structured).unwrap_or_else(|_| "{}\n".to_string())
             };
 
-            output_parts.push(format!("\n\n---\n\n{rendered}"));
+            let json_block = format!("\n\n---\n\n{rendered}");
+            output_parts.push(json_block.clone());
+            let _ = output.write_str(&format!("{json_block}\n"));
         }
     }
 

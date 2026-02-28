@@ -1,6 +1,6 @@
 [package]
 name = "consilium"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 description = "Multi-model deliberation CLI — 5 frontier LLMs debate, then Claude judges"
 license = "MIT"
