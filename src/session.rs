@@ -1,7 +1,9 @@
 //! Session save/share/history utilities.
 
 use crate::config::SessionResult;
+use crate::watch::{classify, LineType};
 use chrono::Local;
+use crossterm::style::{Attribute, Color, Stylize};
 use regex::Regex;
 use serde_json::{Map, Value};
 use std::fs;
@@ -18,12 +20,90 @@ pub trait Output: Send + Sync {
     fn flush(&mut self) -> io::Result<()>;
 }
 
-pub struct StdoutOutput;
+fn render_colored_line(out: &mut impl Write, line: &str, prev_type: Option<LineType>) -> io::Result<()> {
+    let line_type = classify(line, prev_type);
+    let stripped = line.trim();
+
+    match line_type {
+        LineType::Separator => {
+            writeln!(out, "{}", "─".repeat(60).with(Color::DarkGrey))?;
+        }
+        LineType::PhaseBanner => {
+            writeln!(out, "{}", format!(" {stripped} ").with(Color::Cyan).attribute(Attribute::Bold))?;
+        }
+        LineType::ModelHeader => {
+            writeln!(out, "{}", stripped.trim_start_matches("### ").with(Color::Yellow).attribute(Attribute::Bold))?;
+        }
+        LineType::SectionHeader => {
+            writeln!(out, "{}", stripped.trim_start_matches("## ").with(Color::Blue).attribute(Attribute::Bold))?;
+        }
+        LineType::Notice => {
+            writeln!(out, "{}", stripped.with(Color::Green).attribute(Attribute::Bold))?;
+        }
+        LineType::Status => {
+            writeln!(out, "{}", stripped.with(Color::DarkGrey).attribute(Attribute::Italic))?;
+        }
+        LineType::Confidence => {
+            writeln!(out, "{}", stripped.with(Color::Magenta).attribute(Attribute::Bold))?;
+        }
+        LineType::Stats => {
+            writeln!(out, "{}", stripped.with(Color::DarkGrey))?;
+        }
+        LineType::Body => {
+            writeln!(out, "{line}")?;
+        }
+    }
+
+    out.flush()
+}
+
+pub struct StdoutOutput {
+    color: bool,
+    line_buf: String,
+    prev_type: Option<LineType>,
+    flushed_partial: bool,
+}
+
+impl StdoutOutput {
+    pub fn new(color: bool) -> Self {
+        Self { color, line_buf: String::new(), prev_type: None, flushed_partial: false }
+    }
+}
 
 impl Output for StdoutOutput {
     fn write_str(&mut self, s: &str) -> io::Result<()> {
-        print!("{}", s);
-        io::stdout().flush()
+        if !self.color {
+            print!("{s}");
+            return io::stdout().flush();
+        }
+
+        self.line_buf.push_str(s);
+        let mut out = io::stdout();
+
+        while let Some(newline_pos) = self.line_buf.find('\n') {
+            let line = self.line_buf[..newline_pos].to_string();
+            self.line_buf.drain(..=newline_pos);
+
+            if self.flushed_partial {
+                // Rest of a partial line — already printed prefix as plain text
+                writeln!(out, "{line}")?;
+                out.flush()?;
+                self.flushed_partial = false;
+            } else {
+                let line_type = classify(&line, self.prev_type);
+                render_colored_line(&mut out, &line, self.prev_type)?;
+                self.prev_type = Some(line_type);
+            }
+        }
+
+        // Flush any remaining partial line as plain text (streaming UX)
+        if !self.line_buf.is_empty() && !self.flushed_partial {
+            write!(out, "{}", self.line_buf)?;
+            out.flush()?;
+            self.flushed_partial = true;
+        }
+
+        Ok(())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -33,21 +113,55 @@ impl Output for StdoutOutput {
 
 pub struct TeeOutput {
     file: fs::File,
+    color: bool,
+    line_buf: String,
+    prev_type: Option<LineType>,
+    flushed_partial: bool,
 }
 
 impl TeeOutput {
-    pub fn new(path: &Path) -> io::Result<Self> {
+    pub fn new(path: &Path, color: bool) -> io::Result<Self> {
         let file = fs::File::create(path)?;
-        Ok(Self { file })
+        Ok(Self { file, color, line_buf: String::new(), prev_type: None, flushed_partial: false })
     }
 }
 
 impl Output for TeeOutput {
     fn write_str(&mut self, s: &str) -> io::Result<()> {
-        print!("{}", s);
-        let _ = io::stdout().flush();
+        // File always gets plain text
         self.file.write_all(s.as_bytes())?;
-        self.file.flush()
+        self.file.flush()?;
+
+        if !self.color {
+            print!("{s}");
+            return io::stdout().flush();
+        }
+
+        self.line_buf.push_str(s);
+        let mut out = io::stdout();
+
+        while let Some(newline_pos) = self.line_buf.find('\n') {
+            let line = self.line_buf[..newline_pos].to_string();
+            self.line_buf.drain(..=newline_pos);
+
+            if self.flushed_partial {
+                writeln!(out, "{line}")?;
+                out.flush()?;
+                self.flushed_partial = false;
+            } else {
+                let line_type = classify(&line, self.prev_type);
+                render_colored_line(&mut out, &line, self.prev_type)?;
+                self.prev_type = Some(line_type);
+            }
+        }
+
+        if !self.line_buf.is_empty() && !self.flushed_partial {
+            write!(out, "{}", self.line_buf)?;
+            out.flush()?;
+            self.flushed_partial = true;
+        }
+
+        Ok(())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -56,9 +170,9 @@ impl Output for TeeOutput {
     }
 }
 
-pub fn setup_live_output(quiet: bool) -> Box<dyn Output> {
+pub fn setup_live_output(quiet: bool, color: bool) -> Box<dyn Output> {
     if quiet {
-        return Box::new(StdoutOutput);
+        return Box::new(StdoutOutput::new(false));
     }
 
     let sessions_dir = get_sessions_dir();
@@ -90,7 +204,7 @@ pub fn setup_live_output(quiet: bool) -> Box<dyn Output> {
         }
     }
 
-    match TeeOutput::new(&live_pid_path) {
+    match TeeOutput::new(&live_pid_path, color) {
         Ok(tee) => {
             // Update symlink
             let _ = fs::remove_file(&live_link);
@@ -100,7 +214,7 @@ pub fn setup_live_output(quiet: bool) -> Box<dyn Output> {
             }
             Box::new(tee)
         }
-        Err(_) => Box::new(StdoutOutput),
+        Err(_) => Box::new(StdoutOutput::new(color)),
     }
 }
 

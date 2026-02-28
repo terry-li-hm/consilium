@@ -7,6 +7,7 @@ use consilium::config::{
 };
 use consilium::modes::{council, discuss, oxford, quick, redteam, solo};
 use consilium::session::{finish_session, setup_live_output};
+use std::io::IsTerminal;
 
 #[tokio::main]
 async fn main() {
@@ -93,7 +94,10 @@ async fn main() {
         }
         auto_mode
     };
-    let mut output = setup_live_output(args.quiet);
+    let color = !args.no_color
+        && std::env::var("NO_COLOR").is_err()
+        && std::io::stdout().is_terminal();
+    let mut output = setup_live_output(args.quiet, color);
 
     let result = match mode.as_str() {
         "quick" => {

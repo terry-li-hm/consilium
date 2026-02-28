@@ -96,6 +96,10 @@ pub struct Cli {
     #[arg(short, long)]
     pub quiet: bool,
 
+    /// Disable colored output
+    #[arg(long)]
+    pub no_color: bool,
+
     /// API timeout in seconds
     #[arg(long, default_value = "300")]
     pub timeout: f64,
