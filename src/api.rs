@@ -519,6 +519,86 @@ pub async fn run_parallel(
     indexed_results.into_iter().map(|(_, result)| result).collect()
 }
 
+/// Parallel query panelists with different messages per panelist.
+/// `panelists` and `messages_list` must have the same length.
+pub async fn run_parallel_with_different_messages(
+    panelists: &[ModelEntry],
+    messages_list: &[Vec<Message>],
+    api_key: &str,
+    google_api_key: Option<&str>,
+    max_tokens: u32,
+    cost_tracker: Option<&CostTracker>,
+    verbose: bool,
+) -> Vec<(String, String, String)> {
+    assert_eq!(
+        panelists.len(),
+        messages_list.len(),
+        "panelists and messages_list must have the same length"
+    );
+    let client = Client::new();
+
+    let handles: Vec<_> = panelists
+        .iter()
+        .zip(messages_list.iter())
+        .enumerate()
+        .map(|(idx, (&(name, model, fallback), messages))| {
+            let client = client.clone();
+            let api_key = api_key.to_string();
+            let google_api_key = google_api_key.map(|s| s.to_string());
+            let messages = messages.to_vec();
+            let name = name.to_string();
+            let model = model.to_string();
+            let fallback_owned: Option<(String, String)> =
+                fallback.map(|(p, m)| (p.to_string(), m.to_string()));
+            let cost_tracker = cost_tracker.cloned();
+
+            tokio::spawn(async move {
+                let fallback_ref: Option<(&str, &str)> = fallback_owned
+                    .as_ref()
+                    .map(|(p, m)| (p.as_str(), m.as_str()));
+                let result = query_model_async(
+                    &client,
+                    &api_key,
+                    &model,
+                    &messages,
+                    &name,
+                    fallback_ref,
+                    google_api_key.as_deref(),
+                    max_tokens,
+                    2,
+                    cost_tracker.as_ref(),
+                )
+                .await;
+
+                if verbose {
+                    let (ref n, _, ref response) = result;
+                    if !response.starts_with('[') {
+                        println!("\n### {n}");
+                        println!("{response}");
+                        println!();
+                    }
+                }
+
+                (idx, result)
+            })
+        })
+        .collect();
+
+    let mut indexed_results: Vec<(usize, (String, String, String))> = Vec::new();
+    for handle in handles {
+        match handle.await {
+            Ok((idx, result)) => indexed_results.push((idx, result)),
+            Err(e) => {
+                eprintln!("[Error: Task join failed: {e}]");
+            }
+        }
+    }
+
+    // Sort by original index to preserve order
+    indexed_results.sort_by_key(|(idx, _)| *idx);
+    indexed_results.into_iter().map(|(_, result)| result).collect()
+}
+
 /// Strip `<think>...</think>` blocks from content.
 pub fn strip_think_blocks(content: &str) -> String {
     static RE: LazyLock<Regex> =

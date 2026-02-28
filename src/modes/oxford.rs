@@ -1,0 +1,348 @@
+//! Oxford debate mode: structured for/against with rebuttals and verdict.
+
+use crate::api::{query_model, run_parallel_with_different_messages};
+use crate::config::{
+    sanitize_speaker_content, CostTracker, Message, ModelEntry, SessionResult, JUDGE_MODEL,
+};
+use crate::prompts::{
+    oxford_closing_system, oxford_constructive_system, oxford_judge_prior, oxford_judge_verdict,
+    oxford_motion_transform, oxford_rebuttal_system,
+};
+use rand::seq::SliceRandom;
+use reqwest::Client;
+use std::time::Instant;
+
+pub async fn run_oxford(
+    question: &str,
+    models: &[ModelEntry],
+    api_key: &str,
+    google_api_key: Option<&str>,
+    motion_override: Option<String>,
+    _format: &str,
+    timeout: f64,
+    quiet: bool,
+) -> SessionResult {
+    let start = Instant::now();
+    let cost_tracker = CostTracker::new();
+    let client = Client::new();
+    let verbose = !quiet;
+
+    let mut transcript_parts = Vec::new();
+
+    if verbose {
+        println!("============================================================");
+        println!("OXFORD DEBATE");
+        println!("============================================================");
+        println!();
+    }
+
+    // Phase 1: MOTION
+    let motion = if let Some(m) = motion_override {
+        m
+    } else {
+        if verbose {
+            println!("## Motion
+");
+        }
+        let m_messages = vec![
+            Message::system(oxford_motion_transform(question)),
+            Message::user(question),
+        ];
+        let m = query_model(
+            &client,
+            api_key,
+            JUDGE_MODEL,
+            &m_messages,
+            100,
+            timeout,
+            2,
+            Some(&cost_tracker),
+        )
+        .await;
+        let m = m.trim().trim_matches('"').to_string();
+        if verbose {
+            println!("{m}
+");
+        }
+        m
+    };
+    transcript_parts.push(format!("## Motion
+
+{motion}"));
+
+    // Random side assignment
+    let mut sides = models.to_vec();
+    let mut rng = rand::thread_rng();
+    sides.shuffle(&mut rng);
+
+    let (prop_name, prop_model, prop_fallback) = sides[0];
+    let (opp_name, opp_model, opp_fallback) = sides[1];
+
+    if verbose {
+        println!("Proposition (FOR): {prop_name}");
+        println!("Opposition (AGAINST): {opp_name}
+");
+    }
+    transcript_parts.push(format!(
+        "**Proposition:** {prop_name} | **Opposition:** {opp_name}"
+    ));
+
+    // Phase 2: PRIOR
+    if verbose {
+        println!("## Prior
+### Judge (Claude)");
+    }
+    let prior_messages = vec![
+        Message::system(oxford_judge_prior(&motion)),
+        Message::user(format!("Motion: {motion}")),
+    ];
+    let prior_response = query_model(
+        &client,
+        api_key,
+        JUDGE_MODEL,
+        &prior_messages,
+        200,
+        timeout,
+        2,
+        Some(&cost_tracker),
+    )
+    .await;
+    if verbose {
+        println!("{prior_response}
+");
+    }
+    transcript_parts.push(format!("## Prior
+
+### Judge (Claude)
+{prior_response}"));
+
+    // Phase 3: CONSTRUCTIVE (parallel)
+    if verbose {
+        println!("## Constructive Speeches
+(both sides arguing in parallel...)");
+    }
+    let prop_system = oxford_constructive_system(prop_name, "FOR", &motion);
+    let opp_system = oxford_constructive_system(opp_name, "AGAINST", &motion);
+
+    let constructive_results = run_parallel_with_different_messages(
+        &[
+            (prop_name, prop_model, prop_fallback),
+            (opp_name, opp_model, opp_fallback),
+        ],
+        &[
+            vec![
+                Message::system(prop_system),
+                Message::user(format!("Argue FOR the motion: {motion}")),
+            ],
+            vec![
+                Message::system(opp_system),
+                Message::user(format!("Argue AGAINST the motion: {motion}")),
+            ],
+        ],
+        api_key,
+        google_api_key,
+        800,
+        Some(&cost_tracker),
+        verbose,
+    )
+    .await;
+
+    let prop_constructive = constructive_results[0].2.clone();
+    let opp_constructive = constructive_results[1].2.clone();
+
+    transcript_parts.push(format!(
+        "## Constructive Speeches
+
+### {prop_name} (Proposition)
+{prop_constructive}"
+    ));
+    transcript_parts.push(format!(
+        "### {opp_name} (Opposition)
+{opp_constructive}"
+    ));
+
+    // Phase 4: REBUTTAL (parallel)
+    if verbose {
+        println!("## Rebuttals
+(both sides rebutting in parallel...)");
+    }
+    let prop_rebuttal_system = oxford_rebuttal_system(
+        prop_name,
+        "FOR",
+        &motion,
+        &sanitize_speaker_content(&opp_constructive),
+    );
+    let opp_rebuttal_system = oxford_rebuttal_system(
+        opp_name,
+        "AGAINST",
+        &motion,
+        &sanitize_speaker_content(&prop_constructive),
+    );
+
+    let rebuttal_results = run_parallel_with_different_messages(
+        &[
+            (prop_name, prop_model, prop_fallback),
+            (opp_name, opp_model, opp_fallback),
+        ],
+        &[
+            vec![
+                Message::system(prop_rebuttal_system),
+                Message::user("Rebut the opposition's arguments."),
+            ],
+            vec![
+                Message::system(opp_rebuttal_system),
+                Message::user("Rebut the proposition's arguments."),
+            ],
+        ],
+        api_key,
+        google_api_key,
+        600,
+        Some(&cost_tracker),
+        verbose,
+    )
+    .await;
+
+    let prop_rebuttal = rebuttal_results[0].2.clone();
+    let opp_rebuttal = rebuttal_results[1].2.clone();
+
+    transcript_parts.push(format!(
+        "## Rebuttals
+
+### {prop_name} (Proposition rebuttal)
+{prop_rebuttal}"
+    ));
+    transcript_parts.push(format!(
+        "### {opp_name} (Opposition rebuttal)
+{opp_rebuttal}"
+    ));
+
+    // Phase 5: CLOSING (parallel)
+    if verbose {
+        println!("## Closing Statements
+(both sides closing in parallel...)");
+    }
+    let prop_closing_system = oxford_closing_system(prop_name, "FOR", &motion);
+    let opp_closing_system = oxford_closing_system(opp_name, "AGAINST", &motion);
+
+    let closing_results = run_parallel_with_different_messages(
+        &[
+            (prop_name, prop_model, prop_fallback),
+            (opp_name, opp_model, opp_fallback),
+        ],
+        &[
+            vec![
+                Message::system(prop_closing_system),
+                Message::user("Give your closing statement."),
+            ],
+            vec![
+                Message::system(opp_closing_system),
+                Message::user("Give your closing statement."),
+            ],
+        ],
+        api_key,
+        google_api_key,
+        400,
+        Some(&cost_tracker),
+        verbose,
+    )
+    .await;
+
+    let prop_closing = closing_results[0].2.clone();
+    let opp_closing = closing_results[1].2.clone();
+
+    transcript_parts.push(format!(
+        "## Closing Statements
+
+### {prop_name} (Proposition closing)
+{prop_closing}"
+    ));
+    transcript_parts.push(format!(
+        "### {opp_name} (Opposition closing)
+{opp_closing}"
+    ));
+
+    // Phase 6: VERDICT
+    if verbose {
+        println!("## Verdict
+### Judge (Claude)");
+    }
+    let debate_transcript = format!(
+        "### Proposition ({prop_name}) — Constructive
+{prop_constructive}
+
+
+         ### Opposition ({opp_name}) — Constructive
+{opp_constructive}
+
+
+         ### Proposition ({prop_name}) — Rebuttal
+{prop_rebuttal}
+
+
+         ### Opposition ({opp_name}) — Rebuttal
+{opp_rebuttal}
+
+
+         ### Proposition ({prop_name}) — Closing
+{prop_closing}
+
+
+         ### Opposition ({opp_name}) — Closing
+{opp_closing}",
+        prop_constructive = sanitize_speaker_content(&prop_constructive),
+        opp_constructive = sanitize_speaker_content(&opp_constructive),
+        prop_rebuttal = sanitize_speaker_content(&prop_rebuttal),
+        opp_rebuttal = sanitize_speaker_content(&opp_rebuttal),
+        prop_closing = sanitize_speaker_content(&prop_closing),
+        opp_closing = sanitize_speaker_content(&opp_closing)
+    );
+
+    let verdict_system = oxford_judge_verdict(&motion, prop_name, opp_name, &debate_transcript);
+    let verdict_messages = vec![
+        Message::system(verdict_system),
+        Message::user(format!(
+            "Judge this debate on: {motion}
+
+Your prior assessment:
+{prior_response}",
+            prior_response = sanitize_speaker_content(&prior_response)
+        )),
+    ];
+
+    let verdict = query_model(
+        &client,
+        api_key,
+        JUDGE_MODEL,
+        &verdict_messages,
+        1000,
+        timeout,
+        2,
+        Some(&cost_tracker),
+    )
+    .await;
+
+    if verbose {
+        println!("{verdict}
+");
+    }
+    transcript_parts.push(format!("## Verdict
+
+### Judge (Claude)
+{verdict}"));
+
+    let duration = start.elapsed().as_secs_f64();
+    let cost = (cost_tracker.total() * 10000.0).round() / 10000.0;
+
+    if verbose {
+        println!("({:.1}s, ~${:.2})", duration, cost);
+    }
+
+    SessionResult {
+        transcript: transcript_parts.join("
+
+"),
+        cost,
+        duration,
+        failures: None,
+    }
+}

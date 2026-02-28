@@ -1,7 +1,9 @@
 use clap::Parser;
 use consilium::cli::Cli;
-use consilium::config::quick_models;
-use consilium::modes::run_quick;
+use consilium::config::{
+    discuss_models, oxford_models, quick_models, redteam_models, JUDGE_MODEL,
+};
+use consilium::modes::{discuss, oxford, quick, redteam, solo};
 use consilium::session::finish_session;
 
 #[tokio::main]
@@ -31,35 +33,96 @@ async fn main() {
     };
     let google_api_key = std::env::var("GOOGLE_API_KEY").ok();
 
-    if args.quick {
-        let models = quick_models();
-        let result = run_quick(
-            &question,
-            &models,
-            &api_key,
-            google_api_key.as_deref(),
-            !args.quiet,
-            &args.format,
-            args.timeout,
-        )
-        .await;
-
-        finish_session(
-            &question,
-            &result,
-            "quick",
-            "",
-            args.no_save,
-            args.output.as_deref(),
-            args.share,
-            args.quiet,
-            None,
-        );
-
-        std::process::exit(0);
-    }
-
     let mode = args.explicit_mode().unwrap_or("council");
-    eprintln!("Mode '{mode}' for question: {question}");
-    eprintln!("Not yet implemented — quick mode is available in this phase.");
+
+    let result = match mode {
+        "quick" => {
+            quick::run_quick(
+                &question,
+                &quick_models(),
+                &api_key,
+                google_api_key.as_deref(),
+                !args.quiet,
+                &args.format,
+                args.timeout,
+            )
+            .await
+        }
+        "oxford" => {
+            oxford::run_oxford(
+                &question,
+                &oxford_models(),
+                &api_key,
+                google_api_key.as_deref(),
+                args.motion.clone(),
+                &args.format,
+                args.timeout,
+                args.quiet,
+            )
+            .await
+        }
+        "redteam" => {
+            redteam::run_redteam(
+                &question,
+                &redteam_models(),
+                &api_key,
+                google_api_key.as_deref(),
+                args.context.clone(),
+                &args.format,
+                args.timeout,
+                args.quiet,
+            )
+            .await
+        }
+        "discuss" | "socratic" => {
+            discuss::run_discuss(
+                &question,
+                &discuss_models(),
+                &api_key,
+                google_api_key.as_deref(),
+                mode,
+                args.rounds as u32,
+                args.context.clone(),
+                &args.format,
+                args.timeout,
+                args.quiet,
+            )
+            .await
+        }
+        "solo" => {
+            solo::run_solo(
+                &question,
+                JUDGE_MODEL,
+                &api_key,
+                google_api_key.as_deref(),
+                args.roles.clone(),
+                &args.format,
+                args.timeout,
+                args.quiet,
+            )
+            .await
+        }
+        "council" => {
+            eprintln!("Council mode not yet implemented in this phase.");
+            std::process::exit(1);
+        }
+        _ => {
+            eprintln!("Mode '{mode}' not implemented.");
+            std::process::exit(1);
+        }
+    };
+
+    finish_session(
+        &question,
+        &result,
+        mode,
+        "",
+        args.no_save,
+        args.output.as_deref(),
+        args.share,
+        args.quiet,
+        None,
+    );
+
+    std::process::exit(0);
 }
