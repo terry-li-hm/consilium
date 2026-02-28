@@ -2,6 +2,7 @@
 
 use crate::api::{query_model_async, query_model_streaming, run_parallel};
 use crate::config::{is_error_response, CostTracker, Message, ModelEntry, SessionResult};
+use crate::session::Output;
 use chrono::Local;
 use reqwest::Client;
 use serde_json::json;
@@ -15,7 +16,7 @@ async fn run_quick_streaming(
     max_tokens: u32,
     timeout: f64,
     cost_tracker: &CostTracker,
-    verbose: bool,
+    output: &mut dyn Output,
 ) -> Vec<(String, String, String)> {
     let client = Client::new();
     let messages = vec![Message::user(question)];
@@ -25,9 +26,7 @@ async fn run_quick_streaming(
     for &(name, model, fallback) in models {
         let model_name = model.split('/').last().unwrap_or(model).to_string();
 
-        if verbose {
-            println!("### {model_name}");
-        }
+        let _ = output.write_str(&format!("### {model_name}\n"));
 
         let mut response = query_model_streaming(
             &client,
@@ -37,6 +36,7 @@ async fn run_quick_streaming(
             max_tokens,
             timeout,
             Some(cost_tracker),
+            output,
         )
         .await;
 
@@ -61,16 +61,18 @@ async fn run_quick_streaming(
             used_model_name = fb_model_name;
             response = fb_response;
 
-            if verbose && !is_error_response(&response) {
-                println!("{response}");
+            if !is_error_response(&response) {
+                let _ = output.write_str(&format!("{}\n", response));
             }
         }
 
-        if verbose {
-            println!();
-        }
+        let _ = output.write_str("\n");
 
-        out.push((name.to_string(), used_model_name, response.trim().to_string()));
+        out.push((
+            name.to_string(),
+            used_model_name,
+            response.trim().to_string(),
+        ));
     }
 
     out
@@ -81,21 +83,22 @@ pub async fn run_quick(
     models: &[ModelEntry],
     api_key: &str,
     google_api_key: Option<&str>,
-    verbose: bool,
+    output: &mut dyn Output,
     format: &str,
     timeout: f64,
 ) -> SessionResult {
     let start = Instant::now();
     let cost_tracker = CostTracker::new();
 
-    if verbose {
-        println!("(querying {} models in parallel...)", models.len());
-        println!();
-    }
+    let _ = output.write_str(&format!("(querying {} models in parallel...)\n\n", models.len()));
 
     let messages = vec![Message::user(question)];
 
-    let results = if verbose {
+    // For quick mode, if we are not quiet (meaning we have a real output), we do streaming.
+    // If we are quiet, main.rs would have passed a dummy or we wouldn't be here.
+    // But actually we should check if it's prose format or not.
+    
+    let results = if format == "prose" {
         run_quick_streaming(
             question,
             models,
@@ -104,7 +107,7 @@ pub async fn run_quick(
             4000,
             timeout,
             &cost_tracker,
-            verbose,
+            output,
         )
         .await
     } else {
@@ -115,7 +118,7 @@ pub async fn run_quick(
             google_api_key,
             4000,
             Some(&cost_tracker),
-            false,
+            None,
         )
         .await
     };
@@ -134,17 +137,15 @@ pub async fn run_quick(
         })
         .collect();
 
-    if !failures.is_empty() && verbose {
-        println!("Failures:");
+    if !failures.is_empty() {
+        let _ = output.write_str("Failures:\n");
         for f in &failures {
-            println!("  - {f}");
+            let _ = output.write_str(&format!("  - {f}\n"));
         }
-        println!();
+        let _ = output.write_str("\n");
     }
 
-    if verbose {
-        println!("({:.1}s, ~${:.2})", duration, total_cost);
-    }
+    let _ = output.write_str(&format!("({:.1}s, ~${:.2})\n", duration, total_cost));
 
     let transcript = match format {
         "json" | "yaml" => {

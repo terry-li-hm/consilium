@@ -8,6 +8,7 @@ use crate::prompts::{
     oxford_closing_system, oxford_constructive_system, oxford_judge_prior, oxford_judge_verdict,
     oxford_motion_transform, oxford_rebuttal_system,
 };
+use crate::session::Output;
 use rand::seq::SliceRandom;
 use reqwest::Client;
 use std::time::Instant;
@@ -20,30 +21,23 @@ pub async fn run_oxford(
     motion_override: Option<String>,
     _format: &str,
     timeout: f64,
-    quiet: bool,
+    output: &mut dyn Output,
 ) -> SessionResult {
     let start = Instant::now();
     let cost_tracker = CostTracker::new();
     let client = Client::new();
-    let verbose = !quiet;
 
     let mut transcript_parts = Vec::new();
 
-    if verbose {
-        println!("============================================================");
-        println!("OXFORD DEBATE");
-        println!("============================================================");
-        println!();
-    }
+    let _ = output.write_str("============================================================\n");
+    let _ = output.write_str("OXFORD DEBATE\n");
+    let _ = output.write_str("============================================================\n\n");
 
     // Phase 1: MOTION
     let motion = if let Some(m) = motion_override {
         m
     } else {
-        if verbose {
-            println!("## Motion
-");
-        }
+        let _ = output.write_str("## Motion\n\n");
         let m_messages = vec![
             Message::system(oxford_motion_transform(question)),
             Message::user(question),
@@ -60,15 +54,10 @@ pub async fn run_oxford(
         )
         .await;
         let m = m.trim().trim_matches('"').to_string();
-        if verbose {
-            println!("{m}
-");
-        }
+        let _ = output.write_str(&format!("{}\n\n", m));
         m
     };
-    transcript_parts.push(format!("## Motion
-
-{motion}"));
+    transcript_parts.push(format!("## Motion\n\n{motion}"));
 
     // Random side assignment
     let mut sides = models.to_vec();
@@ -78,20 +67,12 @@ pub async fn run_oxford(
     let (prop_name, prop_model, prop_fallback) = sides[0];
     let (opp_name, opp_model, opp_fallback) = sides[1];
 
-    if verbose {
-        println!("Proposition (FOR): {prop_name}");
-        println!("Opposition (AGAINST): {opp_name}
-");
-    }
-    transcript_parts.push(format!(
-        "**Proposition:** {prop_name} | **Opposition:** {opp_name}"
-    ));
+    let _ = output.write_str(&format!("Proposition (FOR): {prop_name}\n"));
+    let _ = output.write_str(&format!("Opposition (AGAINST): {opp_name}\n\n"));
+    transcript_parts.push(format!("**Proposition:** {prop_name} | **Opposition:** {opp_name}"));
 
     // Phase 2: PRIOR
-    if verbose {
-        println!("## Prior
-### Judge (Claude)");
-    }
+    let _ = output.write_str("## Prior\n### Judge (Claude)\n");
     let prior_messages = vec![
         Message::system(oxford_judge_prior(&motion)),
         Message::user(format!("Motion: {motion}")),
@@ -107,20 +88,11 @@ pub async fn run_oxford(
         Some(&cost_tracker),
     )
     .await;
-    if verbose {
-        println!("{prior_response}
-");
-    }
-    transcript_parts.push(format!("## Prior
-
-### Judge (Claude)
-{prior_response}"));
+    let _ = output.write_str(&format!("{}\n\n", prior_response));
+    transcript_parts.push(format!("## Prior\n\n### Judge (Claude)\n{prior_response}"));
 
     // Phase 3: CONSTRUCTIVE (parallel)
-    if verbose {
-        println!("## Constructive Speeches
-(both sides arguing in parallel...)");
-    }
+    let _ = output.write_str("## Constructive Speeches\n(both sides arguing in parallel...)\n");
     let prop_system = oxford_constructive_system(prop_name, "FOR", &motion);
     let opp_system = oxford_constructive_system(opp_name, "AGAINST", &motion);
 
@@ -143,7 +115,7 @@ pub async fn run_oxford(
         google_api_key,
         800,
         Some(&cost_tracker),
-        verbose,
+        Some(output),
     )
     .await;
 
@@ -151,21 +123,14 @@ pub async fn run_oxford(
     let opp_constructive = constructive_results[1].2.clone();
 
     transcript_parts.push(format!(
-        "## Constructive Speeches
-
-### {prop_name} (Proposition)
-{prop_constructive}"
+        "## Constructive Speeches\n\n### {prop_name} (Proposition)\n{prop_constructive}"
     ));
     transcript_parts.push(format!(
-        "### {opp_name} (Opposition)
-{opp_constructive}"
+        "### {opp_name} (Opposition)\n{opp_constructive}"
     ));
 
     // Phase 4: REBUTTAL (parallel)
-    if verbose {
-        println!("## Rebuttals
-(both sides rebutting in parallel...)");
-    }
+    let _ = output.write_str("## Rebuttals\n(both sides rebutting in parallel...)\n");
     let prop_rebuttal_system = oxford_rebuttal_system(
         prop_name,
         "FOR",
@@ -198,7 +163,7 @@ pub async fn run_oxford(
         google_api_key,
         600,
         Some(&cost_tracker),
-        verbose,
+        Some(output),
     )
     .await;
 
@@ -206,21 +171,14 @@ pub async fn run_oxford(
     let opp_rebuttal = rebuttal_results[1].2.clone();
 
     transcript_parts.push(format!(
-        "## Rebuttals
-
-### {prop_name} (Proposition rebuttal)
-{prop_rebuttal}"
+        "## Rebuttals\n\n### {prop_name} (Proposition rebuttal)\n{prop_rebuttal}"
     ));
     transcript_parts.push(format!(
-        "### {opp_name} (Opposition rebuttal)
-{opp_rebuttal}"
+        "### {opp_name} (Opposition rebuttal)\n{opp_rebuttal}"
     ));
 
     // Phase 5: CLOSING (parallel)
-    if verbose {
-        println!("## Closing Statements
-(both sides closing in parallel...)");
-    }
+    let _ = output.write_str("## Closing Statements\n(both sides closing in parallel...)\n");
     let prop_closing_system = oxford_closing_system(prop_name, "FOR", &motion);
     let opp_closing_system = oxford_closing_system(opp_name, "AGAINST", &motion);
 
@@ -243,7 +201,7 @@ pub async fn run_oxford(
         google_api_key,
         400,
         Some(&cost_tracker),
-        verbose,
+        Some(output),
     )
     .await;
 
@@ -251,44 +209,16 @@ pub async fn run_oxford(
     let opp_closing = closing_results[1].2.clone();
 
     transcript_parts.push(format!(
-        "## Closing Statements
-
-### {prop_name} (Proposition closing)
-{prop_closing}"
+        "## Closing Statements\n\n### {prop_name} (Proposition closing)\n{prop_closing}"
     ));
     transcript_parts.push(format!(
-        "### {opp_name} (Opposition closing)
-{opp_closing}"
+        "## Closing Statements\n\n### {opp_name} (Opposition closing)\n{opp_closing}"
     ));
 
     // Phase 6: VERDICT
-    if verbose {
-        println!("## Verdict
-### Judge (Claude)");
-    }
+    let _ = output.write_str("## Verdict\n### Judge (Claude)\n");
     let debate_transcript = format!(
-        "### Proposition ({prop_name}) — Constructive
-{prop_constructive}
-
-
-         ### Opposition ({opp_name}) — Constructive
-{opp_constructive}
-
-
-         ### Proposition ({prop_name}) — Rebuttal
-{prop_rebuttal}
-
-
-         ### Opposition ({opp_name}) — Rebuttal
-{opp_rebuttal}
-
-
-         ### Proposition ({prop_name}) — Closing
-{prop_closing}
-
-
-         ### Opposition ({opp_name}) — Closing
-{opp_closing}",
+        "### Proposition ({prop_name}) — Constructive\n{prop_constructive}\n\n### Opposition ({opp_name}) — Constructive\n{opp_constructive}\n\n### Proposition ({prop_name}) — Rebuttal\n{prop_rebuttal}\n\n### Opposition ({opp_name}) — Rebuttal\n{opp_rebuttal}\n\n### Proposition ({prop_name}) — Closing\n{prop_closing}\n\n### Opposition ({opp_name}) — Closing\n{opp_closing}",
         prop_constructive = sanitize_speaker_content(&prop_constructive),
         opp_constructive = sanitize_speaker_content(&opp_constructive),
         prop_rebuttal = sanitize_speaker_content(&prop_rebuttal),
@@ -301,10 +231,7 @@ pub async fn run_oxford(
     let verdict_messages = vec![
         Message::system(verdict_system),
         Message::user(format!(
-            "Judge this debate on: {motion}
-
-Your prior assessment:
-{prior_response}",
+            "Judge this debate on: {motion}\n\nYour prior assessment:\n{prior_response}",
             prior_response = sanitize_speaker_content(&prior_response)
         )),
     ];
@@ -321,26 +248,16 @@ Your prior assessment:
     )
     .await;
 
-    if verbose {
-        println!("{verdict}
-");
-    }
-    transcript_parts.push(format!("## Verdict
-
-### Judge (Claude)
-{verdict}"));
+    let _ = output.write_str(&format!("{}\n\n", verdict));
+    transcript_parts.push(format!("## Verdict\n\n### Judge (Claude)\n{verdict}"));
 
     let duration = start.elapsed().as_secs_f64();
     let cost = (cost_tracker.total() * 10000.0).round() / 10000.0;
 
-    if verbose {
-        println!("({:.1}s, ~${:.2})", duration, cost);
-    }
+    let _ = output.write_str(&format!("({:.1}s, ~${:.2})\n", duration, cost));
 
     SessionResult {
-        transcript: transcript_parts.join("
-
-"),
+        transcript: transcript_parts.join("\n\n"),
         cost,
         duration,
         failures: None,

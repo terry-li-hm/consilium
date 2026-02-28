@@ -5,9 +5,10 @@ use crate::config::{
     parse_confidence, sanitize_speaker_content, CostTracker, Message, SessionResult, JUDGE_MODEL,
 };
 use crate::prompts::{
-    role_library, solo_blind_system, solo_challenger_addition, solo_debate_system, solo_judge_system,
-    SOLO_DEFAULT_ROLES,
+    role_library, solo_blind_system, solo_challenger_addition, solo_debate_system,
+    solo_judge_system, SOLO_DEFAULT_ROLES,
 };
+use crate::session::Output;
 use reqwest::Client;
 use std::time::Instant;
 
@@ -19,12 +20,11 @@ pub async fn run_solo(
     roles: Option<String>,
     _format: &str,
     timeout: f64,
-    quiet: bool,
+    output: &mut dyn Output,
 ) -> SessionResult {
     let start = Instant::now();
     let cost_tracker = CostTracker::new();
     let client = Client::new();
-    let verbose = !quiet;
 
     let role_lib = role_library();
     let role_names: Vec<String> = if let Some(r) = roles {
@@ -36,7 +36,7 @@ pub async fn run_solo(
         SOLO_DEFAULT_ROLES.iter().map(|s| s.to_string()).collect()
     };
 
-    let mut perspectives: Vec<(&'static str, &'static str)> = Vec::new();
+    let mut perspectives: Vec<(&'static str, String)> = Vec::new();
     for role in role_names {
         let mut description = None;
         for (lib_name, lib_desc) in &role_lib {
@@ -51,11 +51,10 @@ pub async fn run_solo(
                 "You approach this as a {role}. Bring your professional lens, domain expertise, and the specific concerns someone in your role would have. Be specific and opinionated — generic advice is worthless."
             )
         });
-        
-        // Leak for 'static refs in CLI tool
+
+        // Leak for 'static refs in CLI tool (or just use String, but prompts expect &str)
         let leaked_name: &'static str = Box::leak(role.into_boxed_str());
-        let leaked_desc: &'static str = Box::leak(desc.into_boxed_str());
-        perspectives.push((leaked_name, leaked_desc));
+        perspectives.push((leaked_name, desc));
     }
 
     if perspectives.len() < 2 {
@@ -65,7 +64,7 @@ pub async fn run_solo(
                 .iter()
                 .any(|(n, _)| n.to_lowercase() == role.to_lowercase())
             {
-                perspectives.push((*role, role_lib.get(role).unwrap()));
+                perspectives.push((*role, role_lib.get(role).unwrap().to_string()));
             }
             if perspectives.len() >= 3 {
                 break;
@@ -77,21 +76,12 @@ pub async fn run_solo(
     let leaked_model: &'static str = Box::leak(model.to_string().into_boxed_str());
     let mut transcript_parts = Vec::new();
 
-    if verbose {
-        println!("============================================================");
-        println!("SOLO COUNCIL");
-        println!("============================================================");
-        println!();
-    }
+    let _ = output.write_str("============================================================\n");
+    let _ = output.write_str("SOLO COUNCIL\n");
+    let _ = output.write_str("============================================================\n\n");
 
     // Phase 1: BLIND (parallel)
-    if verbose {
-        println!(
-            "## Blind Phase
-(generating {} perspectives in parallel...)",
-            perspectives.len()
-        );
-    }
+    let _ = output.write_str(&format!("## Blind Phase\n(generating {} perspectives in parallel...)\n", perspectives.len()));
 
     let mut blind_messages_list = Vec::with_capacity(perspectives.len());
     for (name, desc) in &perspectives {
@@ -102,11 +92,14 @@ pub async fn run_solo(
     }
 
     // Using the same model for all perspectives
-    let pseudo_panelists: Vec<(&'static str, &'static str, Option<(&'static str, &'static str)>)> =
-        perspectives
-            .iter()
-            .map(|(name, _)| (*name, leaked_model, None))
-            .collect();
+    let pseudo_panelists: Vec<(
+        &'static str,
+        &'static str,
+        Option<(&'static str, &'static str)>,
+    )> = perspectives
+        .iter()
+        .map(|(name, _)| (*name, leaked_model, None))
+        .collect();
 
     let blind_results = run_parallel_with_different_messages(
         &pseudo_panelists,
@@ -115,41 +108,28 @@ pub async fn run_solo(
         google_api_key,
         500,
         Some(&cost_tracker),
-        verbose,
+        Some(output),
     )
     .await;
 
     transcript_parts.push("## Blind Phase".to_string());
     let mut blind_claims = Vec::new();
     for (name, _, response) in blind_results {
-        transcript_parts.push(format!("### {name}
-{response}"));
+        transcript_parts.push(format!("### {name}\n{response}"));
         blind_claims.push((name, response));
     }
 
-    if verbose {
-        println!();
-    }
+    let _ = output.write_str("\n");
 
     // Phase 2: DEBATE (sequential)
-    if verbose {
-        println!("## Debate
-");
-    }
+    let _ = output.write_str("## Debate\n\n");
     transcript_parts.push("## Debate".to_string());
 
     let blind_text = blind_claims
         .iter()
-        .map(|(name, text)| {
-            format!(
-                "**{name}**: {text}",
-                text = sanitize_speaker_content(text)
-            )
-        })
+        .map(|(name, text)| format!("**{name}**: {text}", text = sanitize_speaker_content(text)))
         .collect::<Vec<_>>()
-        .join("
-
-");
+        .join("\n\n");
 
     let mut debate_responses = Vec::new();
     let mut confidences: Vec<(String, Vec<u8>)> = Vec::new();
@@ -167,48 +147,27 @@ pub async fn run_solo(
             system += &solo_challenger_addition();
         }
 
-        let mut debate_context = format!("Blind phase perspectives:
-
-{blind_text}");
+        let mut debate_context = format!("Blind phase perspectives:\n\n{blind_text}");
         if !debate_responses.is_empty() {
             let debate_text = debate_responses
                 .iter()
                 .map(|(n, t): &(String, String)| {
-                    format!(
-                        "**{n}**: {t}",
-                        t = sanitize_speaker_content(t)
-                    )
+                    format!("**{n}**: {t}", t = sanitize_speaker_content(t))
                 })
                 .collect::<Vec<_>>()
-                .join("
-
-");
-            debate_context = format!("{debate_context}
-
-Debate responses so far:
-
-{debate_text}");
+                .join("\n\n");
+            debate_context = format!("{debate_context}\n\nDebate responses so far:\n\n{debate_text}");
         }
 
         let messages = vec![
             Message::system(system),
-            Message::user(format!(
-                "Question:
-
-{question}
-
----
-
-{debate_context}"
-            )),
+            Message::user(format!("Question:\n\n{question}\n\n---\n\n{debate_context}")),
         ];
 
         let is_challenger = *name == challenger_name;
         let challenger_tag = if is_challenger { " (challenger)" } else { "" };
 
-        if verbose {
-            println!("### {name}{challenger_tag}");
-        }
+        let _ = output.write_str(&format!("### {}{}\n", name, challenger_tag));
 
         let response = query_model(
             &client,
@@ -222,12 +181,8 @@ Debate responses so far:
         )
         .await;
 
-        if verbose {
-            println!("{response}
-");
-        }
-        transcript_parts.push(format!("### {name}{challenger_tag}
-{response}"));
+        let _ = output.write_str(&format!("{}\n\n", response));
+        transcript_parts.push(format!("### {}{}\n{response}", name, challenger_tag));
         debate_responses.push((name.to_string(), response.clone()));
 
         if let Some(c) = parse_confidence(&response) {
@@ -240,7 +195,7 @@ Debate responses so far:
     }
 
     // Confidence drift
-    if !confidences.is_empty() && verbose {
+    if !confidences.is_empty() {
         let drift_parts: Vec<String> = confidences
             .iter()
             .map(|(name, scores)| {
@@ -252,51 +207,25 @@ Debate responses so far:
             })
             .collect();
         if !drift_parts.is_empty() {
-            println!("  Confidence: {}
-", drift_parts.join(", "));
+            let _ = output.write_str(&format!("  Confidence: {}\n\n", drift_parts.join(", ")));
             transcript_parts.push(format!("Confidence drift: {}", drift_parts.join(", ")));
         }
     }
 
     // Phase 3: SYNTHESIS
-    if verbose {
-        println!("## Synthesis
-### Judge (Claude)");
-    }
+    let _ = output.write_str("## Synthesis\n### Judge (Claude)\n");
     transcript_parts.push("## Synthesis".to_string());
 
-    let mut full_deliberation = format!("Blind phase:
-
-{blind_text}
-
-Debate:
-
-");
+    let mut full_deliberation = format!("Blind phase:\n\n{blind_text}\n\nDebate:\n\n");
     full_deliberation += &debate_responses
         .iter()
-        .map(|(name, text)| {
-            format!(
-                "**{name}**: {text}",
-                text = sanitize_speaker_content(text)
-            )
-        })
+        .map(|(name, text)| format!("**{name}**: {text}", text = sanitize_speaker_content(text)))
         .collect::<Vec<_>>()
-        .join("
-
-");
+        .join("\n\n");
 
     let judge_messages = vec![
         Message::system(solo_judge_system()),
-        Message::user(format!(
-            "Question:
-{question}
-
----
-
-Full deliberation:
-
-{full_deliberation}"
-        )),
+        Message::user(format!("Question:\n{question}\n\n---\n\nFull deliberation:\n\n{full_deliberation}")),
     ];
 
     let judge_response = query_model(
@@ -311,24 +240,16 @@ Full deliberation:
     )
     .await;
 
-    if verbose {
-        println!("{judge_response}
-");
-    }
-    transcript_parts.push(format!("### Judge (Claude)
-{judge_response}"));
+    let _ = output.write_str(&format!("{}\n\n", judge_response));
+    transcript_parts.push(format!("### Judge (Claude)\n{judge_response}"));
 
     let duration = start.elapsed().as_secs_f64();
     let cost = (cost_tracker.total() * 10000.0).round() / 10000.0;
 
-    if verbose {
-        println!("({:.1}s, ~${:.2})", duration, cost);
-    }
+    let _ = output.write_str(&format!("({:.1}s, ~${:.2})\n", duration, cost));
 
     SessionResult {
-        transcript: transcript_parts.join("
-
-"),
+        transcript: transcript_parts.join("\n\n"),
         cost,
         duration,
         failures: None,

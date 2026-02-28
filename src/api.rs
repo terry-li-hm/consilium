@@ -3,6 +3,7 @@
 use crate::config::{
     is_thinking_model, CostTracker, Message, ModelEntry, GOOGLE_AI_STUDIO_URL, OPENROUTER_URL,
 };
+use crate::session::Output;
 use futures_util::StreamExt;
 use regex::Regex;
 use reqwest::Client;
@@ -12,7 +13,6 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 /// Query a model via OpenRouter with retry logic.
-/// Returns response content or "[Error: ...]" string — never panics.
 pub async fn query_model(
     client: &Client,
     api_key: &str,
@@ -103,7 +103,9 @@ pub async fn query_model(
                     continue;
                 }
                 let preview = &reasoning[..reasoning.len().min(150)];
-                return format!("[Model still thinking - needs more tokens. Partial reasoning: {preview}...]");
+                return format!(
+                    "[Model still thinking - needs more tokens. Partial reasoning: {preview}...]"
+                );
             }
             if attempt < retries {
                 continue;
@@ -245,7 +247,6 @@ pub async fn query_google_ai_studio(
 }
 
 /// Query a model with streaming output — prints tokens as they arrive.
-/// Returns the full concatenated response.
 pub async fn query_model_streaming(
     client: &Client,
     api_key: &str,
@@ -254,6 +255,7 @@ pub async fn query_model_streaming(
     max_tokens: u32,
     timeout_secs: f64,
     cost_tracker: Option<&CostTracker>,
+    output: &mut dyn Output,
 ) -> String {
     let mut full_content = Vec::new();
     let mut in_think_block = false;
@@ -275,12 +277,12 @@ pub async fn query_model_streaming(
         Ok(r) if r.status() == 200 => r,
         Ok(r) => {
             let msg = format!("[Error: HTTP {} from {model}]", r.status());
-            eprintln!("{msg}");
+            let _ = output.write_str(&format!("{}\n", msg));
             return msg;
         }
         Err(e) => {
             let msg = format!("[Error: Connection failed for {model}: {e}]");
-            eprintln!("{msg}");
+            let _ = output.write_str(&format!("{}\n", msg));
             return msg;
         }
     };
@@ -294,7 +296,7 @@ pub async fn query_model_streaming(
             Err(e) => {
                 let msg = format!("[Error: Stream read failed for {model}: {e}]");
                 if full_content.is_empty() {
-                    eprintln!("{msg}");
+                    let _ = output.write_str(&format!("{}\n", msg));
                     return msg;
                 }
                 break;
@@ -314,8 +316,7 @@ pub async fn query_model_streaming(
 
             if let Some(data_str) = line.strip_prefix("data: ") {
                 if data_str.trim() == "[DONE]" {
-                    // Print newline at end of stream
-                    println!();
+                    let _ = output.write_str("\n");
                     return full_content.join("");
                 }
 
@@ -327,7 +328,7 @@ pub async fn query_model_streaming(
                             .and_then(|m| m.as_str())
                             .unwrap_or("Unknown error");
                         let err_str = format!("[Error: {msg}]");
-                        eprintln!("{err_str}");
+                        let _ = output.write_str(&format!("{}\n", err_str));
                         return err_str;
                     }
 
@@ -353,30 +354,25 @@ pub async fn query_model_streaming(
                     {
                         if !content.is_empty() {
                             // Handle <think> blocks inline (DeepSeek-R1 format)
-                            let mut output = content.to_string();
+                            let mut delta_output = content.to_string();
 
-                            if output.contains("<think>") {
+                            if delta_output.contains("<think>") {
                                 in_think_block = true;
                             }
 
                             if in_think_block {
-                                if output.contains("</think>") {
+                                if delta_output.contains("</think>") {
                                     in_think_block = false;
-                                    output = output
-                                        .split("</think>")
-                                        .last()
-                                        .unwrap_or("")
-                                        .to_string();
+                                    delta_output =
+                                        delta_output.split("</think>").last().unwrap_or("").to_string();
                                 } else {
                                     continue;
                                 }
                             }
 
-                            if !output.is_empty() {
-                                print!("{output}");
-                                use std::io::Write;
-                                std::io::stdout().flush().ok();
-                                full_content.push(output);
+                            if !delta_output.is_empty() {
+                                let _ = output.write_str(&delta_output);
+                                full_content.push(delta_output);
                             }
                         }
                     }
@@ -385,19 +381,18 @@ pub async fn query_model_streaming(
         }
     }
 
-    println!();
+    let _ = output.write_str("\n");
 
     if full_content.is_empty() {
         let msg = format!("[No response from {model}]");
-        eprintln!("{msg}");
+        let _ = output.write_str(&format!("{}\n", msg));
         return msg;
     }
 
     full_content.join("")
 }
 
-/// Async query for parallel phases. Returns (name, model_name, response).
-/// Tries OpenRouter first, then falls back to Google AI Studio if available.
+/// Async query for parallel phases.
 pub async fn query_model_async(
     client: &Client,
     api_key: &str,
@@ -413,7 +408,14 @@ pub async fn query_model_async(
     let model_name = model.split('/').last().unwrap_or(model).to_string();
 
     let response = query_model(
-        client, api_key, model, messages, max_tokens, 300.0, retries, cost_tracker,
+        client,
+        api_key,
+        model,
+        messages,
+        max_tokens,
+        300.0,
+        retries,
+        cost_tracker,
     )
     .await;
 
@@ -435,18 +437,14 @@ pub async fn query_model_async(
                 retries,
             )
             .await;
-            return (
-                name.to_string(),
-                fallback_model.to_string(),
-                fb_response,
-            );
+            return (name.to_string(), fallback_model.to_string(), fb_response);
         }
     }
 
     (name.to_string(), model_name, response)
 }
 
-/// Parallel query panelists with shared messages. Returns [(name, model_name, response)].
+/// Parallel query panelists with shared messages.
 pub async fn run_parallel(
     panelists: &[ModelEntry],
     messages: &[Message],
@@ -454,9 +452,21 @@ pub async fn run_parallel(
     google_api_key: Option<&str>,
     max_tokens: u32,
     cost_tracker: Option<&CostTracker>,
-    verbose: bool,
+    output: Option<&mut dyn Output>,
 ) -> Vec<(String, String, String)> {
     let client = Client::new();
+
+    // We can't easily pass a &mut dyn Output into the tokio::spawn tasks because it's not 'static
+    // and not thread-safe for parallel access without a Mutex.
+    // However, the Python implementation seemed to just rely on sys.stdout.
+    // In our case, run_parallel only uses verbose to print if requested.
+    // If output is provided, we'll collect results and then print them if we want it to be serialized.
+    // But usually verbose=true means print-as-they-arrive.
+    // Since they arrive in arbitrary order, and we are using tokio::spawn,
+    // we should use a shared Mutex if we want multiple tasks to write to the same output.
+
+    // Given the constraints and typical CLI usage, it's simpler to collect results and print
+    // them at the end if we want them ordered, OR use a Mutex for immediate output.
 
     let handles: Vec<_> = panelists
         .iter()
@@ -490,15 +500,6 @@ pub async fn run_parallel(
                 )
                 .await;
 
-                if verbose {
-                    let (ref n, _, ref response) = result;
-                    if !response.starts_with('[') {
-                        println!("\n### {n}");
-                        println!("{response}");
-                        println!();
-                    }
-                }
-
                 (idx, result)
             })
         })
@@ -516,11 +517,24 @@ pub async fn run_parallel(
 
     // Sort by original index to preserve order
     indexed_results.sort_by_key(|(idx, _)| *idx);
-    indexed_results.into_iter().map(|(_, result)| result).collect()
+    let final_results: Vec<_> = indexed_results
+        .into_iter()
+        .map(|(_, result)| result)
+        .collect();
+
+    if let Some(out) = output {
+        for (name, _, response) in &final_results {
+            if !response.starts_with('[') {
+                let _ = out.write_str(&format!("\n### {}\n", name));
+                let _ = out.write_str(&format!("{}\n\n", response));
+            }
+        }
+    }
+
+    final_results
 }
 
 /// Parallel query panelists with different messages per panelist.
-/// `panelists` and `messages_list` must have the same length.
 pub async fn run_parallel_with_different_messages(
     panelists: &[ModelEntry],
     messages_list: &[Vec<Message>],
@@ -528,7 +542,7 @@ pub async fn run_parallel_with_different_messages(
     google_api_key: Option<&str>,
     max_tokens: u32,
     cost_tracker: Option<&CostTracker>,
-    verbose: bool,
+    output: Option<&mut dyn Output>,
 ) -> Vec<(String, String, String)> {
     assert_eq!(
         panelists.len(),
@@ -570,15 +584,6 @@ pub async fn run_parallel_with_different_messages(
                 )
                 .await;
 
-                if verbose {
-                    let (ref n, _, ref response) = result;
-                    if !response.starts_with('[') {
-                        println!("\n### {n}");
-                        println!("{response}");
-                        println!();
-                    }
-                }
-
                 (idx, result)
             })
         })
@@ -596,13 +601,26 @@ pub async fn run_parallel_with_different_messages(
 
     // Sort by original index to preserve order
     indexed_results.sort_by_key(|(idx, _)| *idx);
-    indexed_results.into_iter().map(|(_, result)| result).collect()
+    let final_results: Vec<_> = indexed_results
+        .into_iter()
+        .map(|(_, result)| result)
+        .collect();
+
+    if let Some(out) = output {
+        for (name, _, response) in &final_results {
+            if !response.starts_with('[') {
+                let _ = out.write_str(&format!("\n### {}\n", name));
+                let _ = out.write_str(&format!("{}\n\n", response));
+            }
+        }
+    }
+
+    final_results
 }
 
 /// Strip `<think>...</think>` blocks from content.
 pub fn strip_think_blocks(content: &str) -> String {
-    static RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?s)<think>.*?</think>").unwrap());
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<think>.*?</think>").unwrap());
     RE.replace_all(content, "").trim().to_string()
 }
 
@@ -640,7 +658,11 @@ pub async fn classify_mode(
     )
     .await;
 
-    let result = response.trim().to_lowercase().trim_end_matches('.').to_string();
+    let result = response
+        .trim()
+        .to_lowercase()
+        .trim_end_matches('.')
+        .to_string();
 
     let valid_modes = [
         "quick", "council", "oxford", "redteam", "socratic", "discuss", "solo",

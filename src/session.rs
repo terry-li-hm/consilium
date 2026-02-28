@@ -5,10 +5,104 @@ use chrono::Local;
 use regex::Regex;
 use serde_json::{Map, Value};
 use std::fs;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
+
+#[cfg(unix)]
+use libc;
+
+pub trait Output: Send + Sync {
+    fn write_str(&mut self, s: &str) -> io::Result<()>;
+    fn flush(&mut self) -> io::Result<()>;
+}
+
+pub struct StdoutOutput;
+
+impl Output for StdoutOutput {
+    fn write_str(&mut self, s: &str) -> io::Result<()> {
+        print!("{}", s);
+        io::stdout().flush()
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        io::stdout().flush()
+    }
+}
+
+pub struct TeeOutput {
+    file: fs::File,
+}
+
+impl TeeOutput {
+    pub fn new(path: &Path) -> io::Result<Self> {
+        let file = fs::File::create(path)?;
+        Ok(Self { file })
+    }
+}
+
+impl Output for TeeOutput {
+    fn write_str(&mut self, s: &str) -> io::Result<()> {
+        print!("{}", s);
+        let _ = io::stdout().flush();
+        self.file.write_all(s.as_bytes())?;
+        self.file.flush()
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let _ = io::stdout().flush();
+        self.file.flush()
+    }
+}
+
+pub fn setup_live_output(quiet: bool) -> Box<dyn Output> {
+    if quiet {
+        return Box::new(StdoutOutput);
+    }
+
+    let sessions_dir = get_sessions_dir();
+    let live_dir = sessions_dir.parent().unwrap();
+    let pid = std::process::id();
+    let live_pid_path = live_dir.join(format!("live-{}.md", pid));
+    let live_link = live_dir.join("live.md");
+
+    // Clean up stale live files
+    #[cfg(unix)]
+    if let Ok(entries) = fs::read_dir(live_dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with("live-") && name.ends_with(".md") && path != live_pid_path {
+                    // Try to parse PID
+                    if let Some(old_pid_str) = name.strip_prefix("live-").and_then(|s| s.strip_suffix(".md"))
+                    {
+                        if let Ok(old_pid) = old_pid_str.parse::<i32>() {
+                            // Check if process is alive (signal 0)
+                            let is_alive = unsafe { libc::kill(old_pid, 0) == 0 };
+                            if !is_alive {
+                                let _ = fs::remove_file(&path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    match TeeOutput::new(&live_pid_path) {
+        Ok(tee) => {
+            // Update symlink
+            let _ = fs::remove_file(&live_link);
+            #[cfg(unix)]
+            {
+                let _ = std::os::unix::fs::symlink(live_pid_path.file_name().unwrap(), &live_link);
+            }
+            Box::new(tee)
+        }
+        Err(_) => Box::new(StdoutOutput),
+    }
+}
 
 fn mode_title(mode: &str) -> &'static str {
     match mode {
@@ -129,7 +223,10 @@ pub fn share_gist(question: &str, transcript: &str, mode: &str, quiet: bool) -> 
         .arg("create")
         .arg(&temp_path)
         .arg("--desc")
-        .arg(format!("{title}: {}", question.chars().take(50).collect::<String>()))
+        .arg(format!(
+            "{title}: {}",
+            question.chars().take(50).collect::<String>()
+        ))
         .output();
 
     let _ = fs::remove_file(&temp_path);
@@ -184,7 +281,9 @@ pub fn log_history(
     entry.insert("mode".into(), Value::String(mode.to_string()));
     entry.insert(
         "cost".into(),
-        cost.map_or(Value::Null, |v| Value::from(((v * 10_000.0).round()) / 10_000.0)),
+        cost.map_or(Value::Null, |v| {
+            Value::from(((v * 10_000.0).round()) / 10_000.0)
+        }),
     );
     entry.insert(
         "duration".into(),

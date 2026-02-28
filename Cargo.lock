@@ -260,6 +260,7 @@ dependencies = [
  "crossterm",
  "dirs",
  "futures-util",
+ "libc",
  "predicates",
  "rand",
  "ratatui",

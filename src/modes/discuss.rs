@@ -9,9 +9,9 @@ use crate::prompts::{
     discuss_panelist_system, socratic_host_opening, socratic_host_probe, socratic_host_synthesis,
     socratic_panelist_closing, socratic_panelist_system,
 };
+use crate::session::Output;
 use reqwest::Client;
 use std::time::Instant;
-use tokio::signal;
 
 pub async fn run_discuss(
     question: &str,
@@ -23,12 +23,11 @@ pub async fn run_discuss(
     _context: Option<String>,
     _format: &str,
     timeout: f64,
-    quiet: bool,
+    output: &mut dyn Output,
 ) -> SessionResult {
     let start = Instant::now();
     let cost_tracker = CostTracker::new();
     let client = Client::new();
-    let verbose = !quiet;
 
     let is_socratic = style == "socratic";
     let host_name = if is_socratic {
@@ -40,23 +39,17 @@ pub async fn run_discuss(
     let mut transcript_parts = Vec::new();
     let mut conversation_history: Vec<(String, String)> = Vec::new();
 
-    if verbose {
-        println!("============================================================");
-        if is_socratic {
-            println!("SOCRATIC EXAMINATION");
-        } else {
-            println!("ROUNDTABLE DISCUSSION");
-        }
-        println!("============================================================");
-        println!();
+    let _ = output.write_str("============================================================\n");
+    if is_socratic {
+        let _ = output.write_str("SOCRATIC EXAMINATION\n");
+    } else {
+        let _ = output.write_str("ROUNDTABLE DISCUSSION\n");
     }
+    let _ = output.write_str("============================================================\n\n");
 
     // Phase 1: FRAMING / QUESTIONS
     let opening_label = if is_socratic { "Questions" } else { "Opening" };
-    if verbose {
-        println!("## {opening_label}
-### {host_name}");
-    }
+    let _ = output.write_str(&format!("## {}\n### {}\n", opening_label, host_name));
 
     let framing_system = if is_socratic {
         socratic_host_opening()
@@ -78,22 +71,12 @@ pub async fn run_discuss(
     )
     .await;
 
-    if verbose {
-        println!("{host_framing}
-");
-    }
-    transcript_parts.push(format!(
-        "## {opening_label}
-
-### {host_name}
-{host_framing}"
-    ));
+    let _ = output.write_str(&format!("{}\n\n", host_framing));
+    transcript_parts.push(format!("## {}\n\n### {}\n{}", opening_label, host_name, host_framing));
     conversation_history.push((host_name.to_string(), host_framing.clone()));
 
     // Panelist opening takes / answers (parallel)
-    if verbose {
-        println!("(querying {} panelists in parallel...)", panelists.len());
-    }
+    let _ = output.write_str(&format!("(querying {} panelists in parallel...)\n", panelists.len()));
 
     let opening_system = if is_socratic {
         socratic_panelist_system("a panelist", 200)
@@ -103,22 +86,12 @@ pub async fn run_discuss(
 
     let opening_user = if is_socratic {
         format!(
-            "Topic: {question}
-
-The examiner asks:
-{host_framing}
-
-Answer each question directly.",
+            "Topic: {question}\n\nThe examiner asks:\n{host_framing}\n\nAnswer each question directly.",
             host_framing = sanitize_speaker_content(&host_framing)
         )
     } else {
         format!(
-            "Topic: {question}
-
-The host opened with:
-{host_framing}
-
-Give your opening take.",
+            "Topic: {question}\n\nThe host opened with:\n{host_framing}\n\nGive your opening take.",
             host_framing = sanitize_speaker_content(&host_framing)
         )
     };
@@ -132,7 +105,7 @@ Give your opening take.",
         google_api_key,
         500,
         Some(&cost_tracker),
-        verbose,
+        Some(output),
     )
     .await;
 
@@ -141,59 +114,29 @@ Give your opening take.",
     }
 
     for (name, _, response) in opening_results {
-        transcript_parts.push(format!("### {name}
-{response}"));
+        transcript_parts.push(format!("### {name}\n{response}"));
         conversation_history.push((name, response));
     }
 
-    if verbose {
-        println!();
-    }
+    let _ = output.write_str("\n");
 
     // Phase 2: DISCUSSION / PROBING
     let round_label = if is_socratic { "Probing Round" } else { "Round" };
-    let history_label = if is_socratic {
-        "Examination"
-    } else {
-        "Discussion"
-    };
+    let history_label = if is_socratic { "Examination" } else { "Discussion" };
     let mut round_num = 0;
-
-    let ctrl_c = signal::ctrl_c();
-    tokio::pin!(ctrl_c);
 
     loop {
         if rounds > 0 && round_num >= rounds {
             break;
         }
 
-        // For rounds=0, check if Ctrl+C was pressed
-        if rounds == 0 {
-            tokio::select! {
-                _ = &mut ctrl_c => {
-                    if verbose {
-                        println!("
-(interrupted, wrapping up...)
-");
-                    }
-                    break;
-                }
-                else => {}
-            }
-        }
-
         round_num += 1;
 
-        if verbose {
-            println!("## {round_label} {round_num}
-");
-        }
-        transcript_parts.push(format!("## {round_label} {round_num}"));
+        let _ = output.write_str(&format!("## {} {}\n\n", round_label, round_num));
+        transcript_parts.push(format!("## {} {}", round_label, round_num));
 
         // Host steering / probing
-        if verbose {
-            println!("### {host_name}");
-        }
+        let _ = output.write_str(&format!("### {}\n", host_name));
 
         let steer_system = if is_socratic {
             socratic_host_probe()
@@ -210,19 +153,11 @@ Give your opening take.",
                 )
             })
             .collect::<Vec<_>>()
-            .join("
-
-");
+            .join("\n\n");
 
         let steer_messages = vec![
             Message::system(steer_system),
-            Message::user(format!(
-                "Topic: {question}
-
-{history_label} so far:
-
-{history_text}"
-            )),
+            Message::user(format!("Topic: {question}\n\n{history_label} so far:\n\n{history_text}")),
         ];
 
         let host_steer = query_model(
@@ -237,12 +172,8 @@ Give your opening take.",
         )
         .await;
 
-        if verbose {
-            println!("{host_steer}
-");
-        }
-        transcript_parts.push(format!("### {host_name}
-{host_steer}"));
+        let _ = output.write_str(&format!("{}\n\n", host_steer));
+        transcript_parts.push(format!("### {}\n{}", host_name, host_steer));
         conversation_history.push((host_name.to_string(), host_steer));
 
         // Panelists respond sequentially
@@ -268,26 +199,14 @@ Give your opening take.",
                     )
                 })
                 .collect::<Vec<_>>()
-                .join("
-
-");
+                .join("\n\n");
 
             let panelist_messages = vec![
                 Message::system(panelist_system),
-                Message::user(format!(
-                    "Topic: {question}
-
-{history_label} so far:
-
-{history_text}
-
-{follow_up_cue}"
-                )),
+                Message::user(format!("Topic: {question}\n\n{history_label} so far:\n\n{history_text}\n\n{follow_up_cue}")),
             ];
 
-            if verbose {
-                println!("### {name}");
-            }
+            let _ = output.write_str(&format!("### {name}\n"));
             let response = query_model(
                 &client,
                 api_key,
@@ -300,21 +219,14 @@ Give your opening take.",
             )
             .await;
 
-            if verbose {
-                println!("{response}
-");
-            }
-            transcript_parts.push(format!("### {name}
-{response}"));
+            let _ = output.write_str(&format!("{}\n\n", response));
+            transcript_parts.push(format!("### {name}\n{response}"));
             conversation_history.push((name.to_string(), response));
         }
     }
 
     // Phase 3: CLOSING
-    if verbose {
-        println!("## Closing
-");
-    }
+    let _ = output.write_str("## Closing\n\n");
     transcript_parts.push("## Closing".to_string());
 
     let closing_prompt = if is_socratic {
@@ -332,24 +244,14 @@ Give your opening take.",
             )
         })
         .collect::<Vec<_>>()
-        .join("
-
-");
+        .join("\n\n");
 
     let closing_messages = vec![
         Message::system(closing_prompt),
-        Message::user(format!(
-            "Topic: {question}
-
-Full {history_label}:
-
-{history_text}"
-        )),
+        Message::user(format!("Topic: {question}\n\nFull {history_label}:\n\n{history_text}")),
     ];
 
-    if verbose {
-        println!("(querying {} panelists in parallel...)", panelists.len());
-    }
+    let _ = output.write_str(&format!("(querying {} panelists in parallel...)\n", panelists.len()));
 
     let closing_results = run_parallel(
         panelists,
@@ -358,19 +260,16 @@ Full {history_label}:
         google_api_key,
         300,
         Some(&cost_tracker),
-        verbose,
+        Some(output),
     )
     .await;
 
     for (name, _, response) in closing_results {
-        transcript_parts.push(format!("### {name}
-{response}"));
+        transcript_parts.push(format!("### {name}\n{response}"));
         conversation_history.push((name, response));
     }
 
-    if verbose {
-        println!();
-    }
+    let _ = output.write_str("\n");
 
     // Host closing / synthesis
     let closing_host_prompt = if is_socratic {
@@ -388,30 +287,19 @@ Full {history_label}:
             )
         })
         .collect::<Vec<_>>()
-        .join("
-
-");
+        .join("\n\n");
 
     let closing_host_messages = vec![
         Message::system(closing_host_prompt),
-        Message::user(format!(
-            "Topic: {question}
-
-Full {history_label}:
-
-{history_text}"
-        )),
+        Message::user(format!("Topic: {question}\n\nFull {history_label}:\n\n{history_text}")),
     ];
 
-    if is_socratic && verbose {
-        println!("## Synthesis
-");
+    if is_socratic {
+        let _ = output.write_str("## Synthesis\n\n");
         transcript_parts.push("## Synthesis".to_string());
     }
 
-    if verbose {
-        println!("### {host_name}");
-    }
+    let _ = output.write_str(&format!("### {}\n", host_name));
 
     let host_closing = query_model(
         &client,
@@ -425,24 +313,16 @@ Full {history_label}:
     )
     .await;
 
-    if verbose {
-        println!("{host_closing}
-");
-    }
-    transcript_parts.push(format!("### {host_name}
-{host_closing}"));
+    let _ = output.write_str(&format!("{}\n\n", host_closing));
+    transcript_parts.push(format!("### {}\n{}", host_name, host_closing));
 
     let duration = start.elapsed().as_secs_f64();
     let cost = (cost_tracker.total() * 10000.0).round() / 10000.0;
 
-    if verbose {
-        println!("({:.1}s, ~${:.2})", duration, cost);
-    }
+    let _ = output.write_str(&format!("({:.1}s, ~${:.2})\n", duration, cost));
 
     SessionResult {
-        transcript: transcript_parts.join("
-
-"),
+        transcript: transcript_parts.join("\n\n"),
         cost,
         duration,
         failures: None,

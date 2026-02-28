@@ -11,6 +11,7 @@ use crate::prompts::{
     council_first_speaker_system, council_first_speaker_with_blind, council_social_constraint,
     council_xpol_system, domain_context, EXTRACTION_PROMPT,
 };
+use crate::session::Output;
 use chrono::Local;
 use regex::Regex;
 use reqwest::Client;
@@ -293,15 +294,13 @@ pub async fn extract_structured_summary(
 pub async fn decompose_question(
     question: &str,
     api_key: &str,
-    verbose: bool,
+    output: &mut dyn Output,
     cost_tracker: &CostTracker,
 ) -> Vec<String> {
     let client = Client::new();
 
-    if verbose {
-        let judge_name = JUDGE_MODEL.split('/').last().unwrap_or(JUDGE_MODEL);
-        println!("### Question Decomposition ({judge_name})");
-    }
+    let judge_name = JUDGE_MODEL.split('/').last().unwrap_or(JUDGE_MODEL);
+    let _ = output.write_str(&format!("### Question Decomposition ({judge_name})\n"));
 
     let messages = vec![
         Message::system("Decompose the user's complex question into 2-3 focused, non-overlapping sub-questions.\n\nOutput STRICT JSON only: an array of strings.\nNo markdown, no prose, no explanation.\nEach sub-question should be actionable for independent analysis."),
@@ -320,9 +319,7 @@ pub async fn decompose_question(
     )
     .await;
 
-    if verbose {
-        println!();
-    }
+    let _ = output.write_str("\n");
 
     let candidate = ARRAY_RE
         .find(&response)
@@ -361,7 +358,7 @@ async fn run_blind_phase_parallel(
     council_config: &[ModelEntry],
     api_key: &str,
     google_api_key: Option<&str>,
-    verbose: bool,
+    output: &mut dyn Output,
     persona: Option<&str>,
     domain_hint: Option<&str>,
     sub_questions: Option<&[String]>,
@@ -370,13 +367,10 @@ async fn run_blind_phase_parallel(
     let mut blind_system = council_blind_system();
     blind_system = append_optional_context(blind_system, domain_hint, false, persona);
 
-    if verbose {
-        println!("{}", "=".repeat(60));
-        println!("BLIND PHASE (independent claims)");
-        println!("{}", "=".repeat(60));
-        println!();
-        println!("(querying all models in parallel...)");
-    }
+    let _ = output.write_str(&"=".repeat(60));
+    let _ = output.write_str("\nBLIND PHASE (independent claims)\n");
+    let _ = output.write_str(&"=".repeat(60));
+    let _ = output.write_str("\n\n(querying all models in parallel...)\n");
 
     let mut user_content = format!("Question:\n\n{question}");
     if let Some(sq) = sub_questions {
@@ -400,13 +394,11 @@ async fn run_blind_phase_parallel(
         google_api_key,
         1500,
         Some(cost_tracker),
-        false,
+        Some(output),
     )
     .await;
 
-    if verbose {
-        println!();
-    }
+    let _ = output.write_str("\n");
 
     result
 }
@@ -417,7 +409,7 @@ async fn run_xpol_phase_parallel(
     council_config: &[ModelEntry],
     api_key: &str,
     google_api_key: Option<&str>,
-    verbose: bool,
+    output: &mut dyn Output,
     persona: Option<&str>,
     domain_hint: Option<&str>,
     display_names: &HashMap<String, String>,
@@ -426,13 +418,10 @@ async fn run_xpol_phase_parallel(
     let mut xpol_system = council_xpol_system();
     xpol_system = append_optional_context(xpol_system, domain_hint, false, persona);
 
-    if verbose {
-        println!("{}", "=".repeat(60));
-        println!("CROSS-POLLINATION PHASE (extend, don't argue)");
-        println!("{}", "=".repeat(60));
-        println!();
-        println!("(querying all models in parallel...)");
-    }
+    let _ = output.write_str(&"=".repeat(60));
+    let _ = output.write_str("\nCROSS-POLLINATION PHASE (extend, don't argue)\n");
+    let _ = output.write_str(&"=".repeat(60));
+    let _ = output.write_str("\n\n(querying all models in parallel...)\n");
 
     let blind_summary = blind_claims
         .iter()
@@ -461,18 +450,16 @@ async fn run_xpol_phase_parallel(
         google_api_key,
         1500,
         Some(cost_tracker),
-        false,
+        Some(output),
     )
     .await;
 
-    if verbose {
-        println!();
-    }
+    let _ = output.write_str("\n");
 
     result
 }
 
-async fn run_followup_discussion(
+pub async fn run_followup_discussion(
     question: &str,
     topic: &str,
     council_config: &[ModelEntry],
@@ -481,20 +468,18 @@ async fn run_followup_discussion(
     domain_hint: Option<&str>,
     social_mode: bool,
     persona: Option<&str>,
-    verbose: bool,
+    output: &mut dyn Output,
     cost_tracker: &CostTracker,
 ) -> String {
     let client = Client::new();
     let followup_models = &council_config[..council_config.len().min(2)];
     let mut transcript_parts = vec![format!("### Followup Discussion: {topic}\n")];
 
-    if verbose {
-        println!();
-        println!("{}", "=".repeat(60));
-        println!("FOLLOWUP: {topic}");
-        println!("{}", "=".repeat(60));
-        println!();
-    }
+    let _ = output.write_str("\n");
+    let _ = output.write_str(&"=".repeat(60));
+    let _ = output.write_str(&format!("\nFOLLOWUP: {topic}\n"));
+    let _ = output.write_str(&"=".repeat(60));
+    let _ = output.write_str("\n\n");
 
     let mut followup_system = [
         "You are participating in a FOCUSED FOLLOWUP discussion on a specific topic.",
@@ -510,9 +495,7 @@ async fn run_followup_discussion(
     followup_system = append_optional_context(followup_system, domain_hint, social_mode, persona);
 
     for &(name, model, fallback) in followup_models {
-        if verbose {
-            println!("### {name}");
-        }
+        let _ = output.write_str(&format!("### {name}\n"));
 
         let messages = vec![
             Message::system(followup_system.clone()),
@@ -535,19 +518,15 @@ async fn run_followup_discussion(
         )
         .await;
 
-        if verbose {
-            println!("{response}\n");
-        }
+        let _ = output.write_str(&format!("{response}\n\n"));
 
         transcript_parts.push(format!("### {model_name}\n{response}\n"));
     }
 
-    if verbose {
-        println!("{}", "=".repeat(60));
-        println!("FOLLOWUP COMPLETE");
-        println!("{}", "=".repeat(60));
-        println!();
-    }
+    let _ = output.write_str(&"=".repeat(60));
+    let _ = output.write_str("\nFOLLOWUP COMPLETE\n");
+    let _ = output.write_str(&"=".repeat(60));
+    let _ = output.write_str("\n\n");
 
     transcript_parts.join("\n\n")
 }
@@ -558,7 +537,7 @@ pub async fn run_council(
     api_key: &str,
     google_api_key: Option<&str>,
     rounds: usize,
-    verbose: bool,
+    output: &mut dyn Output,
     anonymous: bool,
     blind: bool,
     context: Option<&str>,
@@ -589,7 +568,7 @@ pub async fn run_council(
             council_config,
             api_key,
             google_api_key,
-            verbose,
+            output,
             persona,
             domain_hint,
             sub_questions.as_deref(),
@@ -617,33 +596,27 @@ pub async fn run_council(
             .collect()
     };
 
-    if verbose {
-        println!("Council members: {:?}", council_names);
-        if anonymous {
-            println!("(Models see each other as Speaker 1, 2, etc. to prevent bias)");
-        }
-        println!("Rounds: {rounds}");
-        if let Some(d) = domain {
-            println!("Domain context: {d}");
-        }
-        if social_mode {
-            println!("Social context detected: applying conversational constraint");
-        }
-        println!(
-            "Question: {}{}",
-            &question.chars().take(100).collect::<String>(),
-            if question.chars().count() > 100 {
-                "..."
-            } else {
-                ""
-            }
-        );
-        println!();
-        println!("{}", "=".repeat(60));
-        println!("COUNCIL DELIBERATION");
-        println!("{}", "=".repeat(60));
-        println!();
+    let _ = output.write_str(&format!("Council members: {:?}\n", council_names));
+    if anonymous {
+        let _ = output.write_str("(Models see each other as Speaker 1, 2, etc. to prevent bias)\n");
     }
+    let _ = output.write_str(&format!("Rounds: {rounds}\n"));
+    if let Some(d) = domain {
+        let _ = output.write_str(&format!("Domain context: {d}\n"));
+    }
+    if social_mode {
+        let _ = output.write_str("Social context detected: applying conversational constraint\n");
+    }
+    let question_preview = if question.chars().count() > 100 {
+        format!("{}...", &question.chars().take(97).collect::<String>())
+    } else {
+        question.to_string()
+    };
+    let _ = output.write_str(&format!("Question: {question_preview}\n\n"));
+    let _ = output.write_str(&"=".repeat(60));
+    let _ = output.write_str("\nCOUNCIL DELIBERATION\n");
+    let _ = output.write_str(&"=".repeat(60));
+    let _ = output.write_str("\n\n");
 
     let mut conversation: Vec<(String, String)> = Vec::new();
     let mut output_parts: Vec<String> = Vec::new();
@@ -692,7 +665,7 @@ pub async fn run_council(
             council_config,
             api_key,
             google_api_key,
-            verbose,
+            output,
             persona,
             domain_hint,
             &display_names,
@@ -812,10 +785,8 @@ pub async fn run_council(
                 ""
             };
 
-            if verbose {
-                let model_name = model.split('/').last().unwrap_or(model);
-                println!("### {model_name}{challenger_indicator}");
-            }
+            let model_name = model.split('/').last().unwrap_or(model);
+            let _ = output.write_str(&format!("### {model_name}{challenger_indicator}\n"));
 
             let (speaker_name, model_name, response) = query_model_async(
                 &client,
@@ -831,9 +802,7 @@ pub async fn run_council(
             )
             .await;
 
-            if verbose {
-                println!("{response}\n");
-            }
+            let _ = output.write_str(&format!("{response}\n\n"));
 
             if is_error_response(&response) {
                 failed_models.push(format!("{model_name}: {response}"));
@@ -854,9 +823,7 @@ pub async fn run_council(
         let (converged, reason) =
             detect_consensus(&conversation, council_config, Some(current_challenger));
         if converged {
-            if verbose {
-                println!(">>> CONSENSUS DETECTED ({reason}) - proceeding to judge\n");
-            }
+            let _ = output.write_str(&format!(">>> CONSENSUS DETECTED ({reason}) - proceeding to judge\n\n"));
             break;
         }
     }
@@ -923,9 +890,7 @@ pub async fn run_council(
     let mut final_judge_response: Option<String> = None;
 
     if !judge {
-        if verbose {
-            println!("(judge=false — skipping synthesis for external judge)\n");
-        }
+        let _ = output.write_str("(judge=false — skipping synthesis for external judge)\n\n");
 
         output_parts.push(format!(
             "## Council Deliberation Transcript\n\n{deliberation_text}"
@@ -976,12 +941,7 @@ pub async fn run_council(
         };
 
         let judge_system = format!(
-            "You are the Judge (Claude), responsible for synthesizing the council's deliberation.{context_hint}{domain_hint_text}\n\nYou did NOT participate in the deliberation — you're seeing it fresh. This gives you objectivity.\n\nSYNTHESIS METHOD — Analysis of Competing Hypotheses:\nRather than seeking the consensus view, first list ALL plausible conclusions from the deliberation (typically 2-4). For each piece of evidence or argument raised by the council, evaluate how well it supports or undermines EACH hypothesis. Eliminate conclusions that are inconsistent with the strongest evidence. The surviving hypothesis is your recommendation.\n\nCONVERGENCE SIGNAL:\nWhen independent agents with different models and training reached the SAME conclusion in the blind phase, treat this as a multiplicatively strong signal — independent agreement from different priors is more reliable than the same conclusion repeated. Push your confidence further toward certainty than a simple average.\n\nSYCOPHANCY CHECK:\nFlag any agent that changed position during debate WITHOUT citing a specific new argument or piece of evidence. Position changes labeled POSITION CHANGE with clear reasoning are healthy. Unlabeled shifts toward consensus are sycophancy — discount these.\n\nAfter applying this method, structure your response as:\n\n## Competing Hypotheses\n[List 2-4 plausible conclusions. For each, note which council arguments support/undermine it]\n\n## Points of Agreement\n[What the council agrees on — and whether that consensus should be trusted given the sycophancy check]\n\n## Points of Disagreement\n[Where views genuinely diverged and why — these often point to the crux]\n\n## Judge's Own Take\n[Your independent perspective. What did the council miss or underweight?]\n\n## Synthesis\n[The integrated perspective, combining council views with your own ACH analysis]\n\n## Recommendation\n[Your final recommendation]{social_judge_section}\nBe balanced and fair. Acknowledge minority views. But don't be afraid to have your own opinion — you're the judge, not just a summarizer. Critically evaluate each position — don't replicate or parrot the council's language.{}\n\nCRITICAL — PRESCRIPTION DISCIPLINE:\nYour job is to FILTER, not aggregate. The council will generate many suggestions. Most are interesting but not necessary.\n\nRules:\n- **Do Now** — MAX 3 items. For each, first argue AGAINST including it (cost, risk, unnecessary). Only include it if it survives your own counter-argument. If you can't argue against it, it's probably essential.\n- **Consider Later** — Items that are interesting but not worth doing now\n- **Skip** — Explicitly list council suggestions you're DROPPING and why\n\nThe council's gravitational pull is toward \"add more.\" Your gravitational pull must be toward \"do less.\" A recommendation with 6 action items is not a recommendation — it's a wish list.\n\nDon't recommend building infrastructure for problems that don't exist yet.\n\nIf this council revealed a reusable pattern about model reliability, user blind spots, or question framing, propose a candidate Static Note update at the end of your synthesis.",
-            if social_mode {
-                " For social contexts, prioritize natural/human output over strategic optimization."
-            } else {
-                ""
-            }
+            "You are the Judge (Claude), responsible for synthesizing the council's deliberation.{context_hint}{domain_hint_text}\n\nYou did NOT participate in the deliberation — you're seeing it fresh. This gives you objectivity.\n\nSYNTHESIS METHOD — Analysis of Competing Hypotheses:\nRather than seeking the consensus view, first list ALL plausible conclusions from the deliberation (typically 2-4). For each piece of evidence or argument raised by the council, evaluate how well it supports or undermines EACH hypothesis. Eliminate conclusions that are inconsistent with the strongest evidence. The surviving hypothesis is your recommendation.\n\nCONVERGENCE SIGNAL:\nWhen independent agents with different models and training reached the SAME conclusion in the blind phase, treat this as a multiplicatively strong signal — independent agreement from different priors is more reliable than the same conclusion repeated. Push your confidence further toward certainty than a simple average.\n\nSYCOPHANCY CHECK:\nFlag any agent that changed position during debate WITHOUT citing a specific new argument or piece of evidence. Position changes labeled POSITION CHANGE with clear reasoning are healthy. Unlabeled shifts toward consensus are sycophancy — discount these.\n\nAfter applying this method, structure your response as:\n\n## Competing Hypotheses\n[List 2-4 plausible conclusions. For each, note which council arguments support/undermine it]\n\n## Points of Agreement\n[What the council agrees on — and whether that consensus should be trusted given the sycophancy check]\n\n## Points of Disagreement\n[Where views genuinely diverged and why — these often point to the crux]\n\n## Judge's Own Take\n[Your independent perspective. What did the council miss or underweight?]\n\n## Synthesis\n[The integrated perspective, combining council views with your own ACH analysis]\n\n## Recommendation\n[Your final recommendation]{social_judge_section}\nBe balanced and fair. Acknowledge minority views if valid. END with three clear sections: **Do Now** (MAX 3 items, argue against each first), **Consider Later**, and **Skip** (with reasons)."
         );
 
         let judge_messages = vec![
@@ -991,10 +951,8 @@ pub async fn run_council(
             )),
         ];
 
-        if verbose {
-            let judge_name = JUDGE_MODEL.split('/').last().unwrap_or(JUDGE_MODEL);
-            println!("### Judge ({judge_name})");
-        }
+        let judge_name = JUDGE_MODEL.split('/').last().unwrap_or(JUDGE_MODEL);
+        let _ = output.write_str(&format!("### Judge ({judge_name})\n"));
 
         let mut judge_response = query_model(
             &client,
@@ -1008,11 +966,8 @@ pub async fn run_council(
         )
         .await;
 
-        if verbose {
-            println!("{judge_response}\n");
-        }
+        let _ = output.write_str(&format!("{judge_response}\n\n"));
 
-        let judge_name = JUDGE_MODEL.split('/').last().unwrap_or(JUDGE_MODEL);
         output_parts.push(format!("### Judge ({judge_name})\n{judge_response}"));
 
         if collabeval {
@@ -1030,10 +985,8 @@ pub async fn run_council(
                 )),
             ];
 
-            if verbose {
-                let critique_name = CRITIQUE_MODEL.split('/').last().unwrap_or(CRITIQUE_MODEL);
-                println!("### Critique ({critique_name})");
-            }
+            let critique_name = CRITIQUE_MODEL.split('/').last().unwrap_or(CRITIQUE_MODEL);
+            let _ = output.write_str(&format!("### Critique ({critique_name})\n"));
 
             let critique_response = query_model(
                 &client,
@@ -1047,24 +1000,17 @@ pub async fn run_council(
             )
             .await;
 
-            if verbose {
-                println!("{critique_response}\n");
-            }
+            let _ = output.write_str(&format!("{critique_response}\n\n"));
 
-            let critique_name = CRITIQUE_MODEL.split('/').last().unwrap_or(CRITIQUE_MODEL);
             output_parts.push(format!(
                 "### Critique ({critique_name})\n{critique_response}"
             ));
 
             if is_error_response(&critique_response) {
-                if verbose {
-                    println!("(Critique unavailable — synthesis is unreviewed)\n");
-                }
+                let _ = output.write_str("(Critique unavailable — synthesis is unreviewed)\n\n");
                 output_parts.push("*(Critique unavailable — synthesis is unreviewed)*".to_string());
             } else {
-                if verbose {
-                    println!("### Final Synthesis ({judge_name})");
-                }
+                let _ = output.write_str(&format!("### Final Synthesis ({judge_name})\n"));
 
                 let mut revision_messages = judge_messages.clone();
                 revision_messages.push(Message::assistant(judge_response.clone()));
@@ -1084,9 +1030,7 @@ pub async fn run_council(
                 )
                 .await;
 
-                if verbose {
-                    println!("{final_response}\n");
-                }
+                let _ = output.write_str(&format!("{final_response}\n\n"));
 
                 output_parts.push(format!(
                     "### Final Synthesis ({judge_name})\n{final_response}"
@@ -1144,7 +1088,7 @@ pub async fn run_council(
             domain_hint,
             social_mode,
             persona,
-            verbose,
+            output,
             &cost_tracker,
         )
         .await;
@@ -1153,9 +1097,7 @@ pub async fn run_council(
     }
 
     if let Some(line) = confidence_line {
-        if verbose {
-            println!("  {line}\n");
-        }
+        let _ = output.write_str(&format!("  {line}\n\n"));
     }
 
     let mut transcript = output_parts.join("\n\n");
@@ -1179,13 +1121,14 @@ pub async fn run_council(
         }
     }
 
-    if !failed_models.is_empty() && verbose {
-        println!();
-        println!("{}", "=".repeat(60));
-        println!("MODEL FAILURES");
-        println!("{}", "=".repeat(60));
+    if !failed_models.is_empty() {
+        let _ = output.write_str("\n");
+        let _ = output.write_str(&"=".repeat(60));
+        let _ = output.write_str("\nMODEL FAILURES\n");
+        let _ = output.write_str(&"=".repeat(60));
+        let _ = output.write_str("\n");
         for failure in &failed_models {
-            println!("  - {failure}");
+            let _ = output.write_str(&format!("  - {failure}\n"));
         }
         let unique_failed = failed_models
             .iter()
@@ -1194,20 +1137,15 @@ pub async fn run_council(
             .collect::<std::collections::HashSet<_>>()
             .len();
         let working_count = council_config.len().saturating_sub(unique_failed);
-        println!(
-            "\nCouncil ran with {working_count}/{} models",
-            council_config.len()
-        );
-        println!("{}", "=".repeat(60));
-        println!();
+        let _ = output.write_str(&format!("\nCouncil ran with {working_count}/{} models\n", council_config.len()));
+        let _ = output.write_str(&"=".repeat(60));
+        let _ = output.write_str("\n\n");
     }
 
     let duration = start.elapsed().as_secs_f64();
     let total_cost = (cost_tracker.total() * 10_000.0).round() / 10_000.0;
 
-    if verbose {
-        println!("({duration:.1}s, ~${total_cost:.2})");
-    }
+    let _ = output.write_str(&format!("({duration:.1}s, ~${total_cost:.2})\n"));
 
     SessionResult {
         transcript,

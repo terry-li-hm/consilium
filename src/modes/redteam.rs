@@ -8,6 +8,7 @@ use crate::prompts::{
     redteam_attacker_deepen, redteam_attacker_system, redteam_host_analysis, redteam_host_deepen,
     redteam_host_triage,
 };
+use crate::session::Output;
 use reqwest::Client;
 use std::time::Instant;
 
@@ -19,28 +20,21 @@ pub async fn run_redteam(
     _context: Option<String>,
     _format: &str,
     timeout: f64,
-    quiet: bool,
+    output: &mut dyn Output,
 ) -> SessionResult {
     let start = Instant::now();
     let cost_tracker = CostTracker::new();
     let client = Client::new();
-    let verbose = !quiet;
 
     let mut transcript_parts = Vec::new();
     let mut conversation_history: Vec<(String, String)> = Vec::new();
 
-    if verbose {
-        println!("============================================================");
-        println!("RED TEAM");
-        println!("============================================================");
-        println!();
-    }
+    let _ = output.write_str("============================================================\n");
+    let _ = output.write_str("RED TEAM\n");
+    let _ = output.write_str("============================================================\n\n");
 
     // Phase 1: ANALYSIS
-    if verbose {
-        println!("## Analysis
-### Host (Claude)");
-    }
+    let _ = output.write_str("## Analysis\n### Host (Claude)\n");
     let analysis_messages = vec![
         Message::system(redteam_host_analysis()),
         Message::user(question),
@@ -56,33 +50,19 @@ pub async fn run_redteam(
         Some(&cost_tracker),
     )
     .await;
-    if verbose {
-        println!("{host_analysis}
-");
-    }
-    transcript_parts.push(format!("## Analysis
-
-### Host (Claude)
-{host_analysis}"));
+    let _ = output.write_str(&format!("{}\n\n", host_analysis));
+    transcript_parts.push(format!("## Analysis\n\n### Host (Claude)\n{host_analysis}"));
     conversation_history.push(("Host (Claude)".to_string(), host_analysis.clone()));
 
     // Phase 2: ATTACKS (parallel)
-    if verbose {
-        println!(
-            "## Attacks
-(querying {} attackers in parallel...)",
-            panelists.len()
-        );
-    }
+    let _ = output.write_str(&format!("## Attacks\n(querying {} attackers in parallel...)\n", panelists.len()));
     let mut attack_messages_list = Vec::with_capacity(panelists.len());
     for (name, _, _) in panelists {
         let attacker_system =
             redteam_attacker_system(name, &sanitize_speaker_content(&host_analysis));
         attack_messages_list.push(vec![
             Message::system(attacker_system),
-            Message::user(format!("Plan/decision to attack:
-
-{question}")),
+            Message::user(format!("Plan/decision to attack:\n\n{question}")),
         ]);
     }
 
@@ -93,26 +73,20 @@ pub async fn run_redteam(
         google_api_key,
         600,
         Some(&cost_tracker),
-        verbose,
+        Some(output),
     )
     .await;
 
     transcript_parts.push("## Attacks".to_string());
     for (name, _, response) in attack_results {
-        transcript_parts.push(format!("### {name}
-{response}"));
+        transcript_parts.push(format!("### {name}\n{response}"));
         conversation_history.push((name, response));
     }
 
-    if verbose {
-        println!();
-    }
+    let _ = output.write_str("\n");
 
     // Phase 3: DEEPENING (Host)
-    if verbose {
-        println!("## Deepening
-### Host (Claude)");
-    }
+    let _ = output.write_str("## Deepening\n### Host (Claude)\n");
     let attacks_text = conversation_history[1..]
         .iter()
         .map(|(speaker, text)| {
@@ -122,19 +96,12 @@ pub async fn run_redteam(
             )
         })
         .collect::<Vec<_>>()
-        .join("
-
-");
+        .join("\n\n");
 
     let deepen_messages = vec![
         Message::system(redteam_host_deepen()),
         Message::user(format!(
-            "Plan/decision:
-{question}
-
-Initial attacks:
-
-{attacks_text}"
+            "Plan/decision:\n{question}\n\nInitial attacks:\n\n{attacks_text}"
         )),
     ];
     let host_deepen = query_model(
@@ -148,16 +115,8 @@ Initial attacks:
         Some(&cost_tracker),
     )
     .await;
-    if verbose {
-        println!("{host_deepen}
-");
-    }
-    transcript_parts.push(format!(
-        "## Deepening
-
-### Host (Claude)
-{host_deepen}"
-    ));
+    let _ = output.write_str(&format!("{}\n\n", host_deepen));
+    transcript_parts.push(format!("## Deepening\n\n### Host (Claude)\n{host_deepen}"));
     conversation_history.push(("Host (Claude)".to_string(), host_deepen));
 
     // Phase 4: DEEPENING (Attackers - sequential)
@@ -188,27 +147,16 @@ Initial attacks:
                 )
             })
             .collect::<Vec<_>>()
-            .join("
-
-");
+            .join("\n\n");
 
         let deepen_attacker_messages = vec![
             Message::system(attacker_deepen_system),
             Message::user(format!(
-                "Plan/decision:
-{question}
-
-Discussion so far:
-
-{full_history}
-
-Find cascading/compound failures."
+                "Plan/decision:\n{question}\n\nDiscussion so far:\n\n{full_history}\n\nFind cascading/compound failures."
             )),
         ];
 
-        if verbose {
-            println!("### {name}");
-        }
+        let _ = output.write_str(&format!("### {name}\n"));
         let response = query_model(
             &client,
             api_key,
@@ -221,20 +169,13 @@ Find cascading/compound failures."
         )
         .await;
 
-        if verbose {
-            println!("{response}
-");
-        }
-        transcript_parts.push(format!("### {name}
-{response}"));
+        let _ = output.write_str(&format!("{}\n\n", response));
+        transcript_parts.push(format!("### {name}\n{response}"));
         conversation_history.push((name.to_string(), response));
     }
 
     // Phase 5: TRIAGE
-    if verbose {
-        println!("## Triage
-### Host (Claude)");
-    }
+    let _ = output.write_str("## Triage\n### Host (Claude)\n");
     let full_history = conversation_history
         .iter()
         .map(|(speaker, text)| {
@@ -244,19 +185,12 @@ Find cascading/compound failures."
             )
         })
         .collect::<Vec<_>>()
-        .join("
-
-");
+        .join("\n\n");
 
     let triage_messages = vec![
         Message::system(redteam_host_triage()),
         Message::user(format!(
-            "Plan/decision:
-{question}
-
-Full red team discussion:
-
-{full_history}"
+            "Plan/decision:\n{question}\n\nFull red team discussion:\n\n{full_history}"
         )),
     ];
     let host_triage = query_model(
@@ -270,26 +204,16 @@ Full red team discussion:
         Some(&cost_tracker),
     )
     .await;
-    if verbose {
-        println!("{host_triage}
-");
-    }
-    transcript_parts.push(format!("## Triage
-
-### Host (Claude)
-{host_triage}"));
+    let _ = output.write_str(&format!("{}\n\n", host_triage));
+    transcript_parts.push(format!("## Triage\n\n### Host (Claude)\n{host_triage}"));
 
     let duration = start.elapsed().as_secs_f64();
     let cost = (cost_tracker.total() * 10000.0).round() / 10000.0;
 
-    if verbose {
-        println!("({:.1}s, ~${:.2})", duration, cost);
-    }
+    let _ = output.write_str(&format!("({:.1}s, ~${:.2})\n", duration, cost));
 
     SessionResult {
-        transcript: transcript_parts.join("
-
-"),
+        transcript: transcript_parts.join("\n\n"),
         cost,
         duration,
         failures: None,

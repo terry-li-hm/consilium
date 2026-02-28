@@ -1,19 +1,65 @@
 use clap::Parser;
+use consilium::admin;
+use consilium::api::classify_mode;
 use consilium::cli::Cli;
 use consilium::config::{
     discuss_models, oxford_models, quick_models, redteam_models, CostTracker, COUNCIL, JUDGE_MODEL,
 };
 use consilium::modes::{council, discuss, oxford, quick, redteam, solo};
-use consilium::session::finish_session;
+use consilium::session::{finish_session, setup_live_output};
 
 #[tokio::main]
 async fn main() {
     let args = Cli::parse();
 
-    if args.is_admin_command() {
-        // TODO: admin command dispatch
-        eprintln!("Admin commands not yet implemented");
-        std::process::exit(1);
+    if args.version_flag {
+        println!("consilium {}", env!("CARGO_PKG_VERSION"));
+        std::process::exit(0);
+    }
+
+    if args.stats {
+        admin::show_stats();
+        std::process::exit(0);
+    }
+
+    if args.sessions {
+        admin::list_sessions();
+        std::process::exit(0);
+    }
+
+    if let Some(term) = args.view.as_deref() {
+        admin::view_session(Some(term));
+        std::process::exit(0);
+    } else if args.view.is_some() {
+        // Handle --view with no arg if allowed by parser, but Option<String> usually needs arg or another flag
+        admin::view_session(None);
+        std::process::exit(0);
+    }
+
+    if let Some(term) = args.search.as_deref() {
+        admin::search_sessions(term);
+        std::process::exit(0);
+    }
+
+    if args.list_roles {
+        admin::list_roles();
+        std::process::exit(0);
+    }
+
+    if args.tui {
+        if let Err(e) = consilium::tui::run_tui() {
+            eprintln!("TUI error: {e}");
+            std::process::exit(1);
+        }
+        std::process::exit(0);
+    }
+
+    if args.watch {
+        if let Err(e) = consilium::watch::watch_live() {
+            eprintln!("Watch error: {e}");
+            std::process::exit(1);
+        }
+        std::process::exit(0);
     }
 
     let question = match &args.question {
@@ -33,16 +79,30 @@ async fn main() {
     };
     let google_api_key = std::env::var("GOOGLE_API_KEY").ok();
 
-    let mode = args.explicit_mode().unwrap_or("council");
+    let client = reqwest::Client::new();
+    let mode = if let Some(explicit) = args.explicit_mode() {
+        explicit.to_string()
+    } else {
+        if !args.quiet {
+            println!("Classifying question...");
+        }
+        let auto_mode = classify_mode(&client, &api_key, &question, None).await;
+        if !args.quiet {
+            println!("Mode: {auto_mode}");
+            println!();
+        }
+        auto_mode
+    };
+    let mut output = setup_live_output(args.quiet);
 
-    let result = match mode {
+    let result = match mode.as_str() {
         "quick" => {
             quick::run_quick(
                 &question,
                 &quick_models(),
                 &api_key,
                 google_api_key.as_deref(),
-                !args.quiet,
+                &mut *output,
                 &args.format,
                 args.timeout,
             )
@@ -57,7 +117,7 @@ async fn main() {
                 args.motion.clone(),
                 &args.format,
                 args.timeout,
-                args.quiet,
+                &mut *output,
             )
             .await
         }
@@ -70,7 +130,7 @@ async fn main() {
                 args.context.clone(),
                 &args.format,
                 args.timeout,
-                args.quiet,
+                &mut *output,
             )
             .await
         }
@@ -80,12 +140,12 @@ async fn main() {
                 &discuss_models(),
                 &api_key,
                 google_api_key.as_deref(),
-                mode,
+                &mode,
                 args.rounds as u32,
                 args.context.clone(),
                 &args.format,
                 args.timeout,
-                args.quiet,
+                &mut *output,
             )
             .await
         }
@@ -98,7 +158,7 @@ async fn main() {
                 args.roles.clone(),
                 &args.format,
                 args.timeout,
-                args.quiet,
+                &mut *output,
             )
             .await
         }
@@ -113,7 +173,7 @@ async fn main() {
             let sub_questions = if should_decompose {
                 let decompose_cost = CostTracker::new();
                 Some(
-                    council::decompose_question(&question, &api_key, !args.quiet, &decompose_cost)
+                    council::decompose_question(&question, &api_key, &mut *output, &decompose_cost)
                         .await,
                 )
             } else {
@@ -135,7 +195,7 @@ async fn main() {
                 &api_key,
                 google_api_key.as_deref(),
                 rounds,
-                !args.quiet,
+                &mut *output,
                 true,
                 true,
                 args.context.as_deref(),
@@ -160,7 +220,7 @@ async fn main() {
     finish_session(
         &question,
         &result,
-        mode,
+        &mode,
         "",
         args.no_save,
         args.output.as_deref(),
