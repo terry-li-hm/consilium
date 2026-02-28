@@ -273,16 +273,14 @@ impl TuiApp {
                 self.render_line(&line);
             }
             self.update_stream_preview();
-        } else {
-            if self.current_target.as_ref().is_some_and(|p| !p.exists()) {
-                if self.in_model_block {
-                    self.flush_body();
-                }
-                self.file = None;
-                self.current_target = None;
-                self.partial_buf.clear();
-                self.stream_preview.clear();
+        } else if self.current_target.as_ref().is_some_and(|p| !p.exists()) {
+            if self.in_model_block {
+                self.flush_body();
             }
+            self.file = None;
+            self.current_target = None;
+            self.partial_buf.clear();
+            self.stream_preview.clear();
         }
         Ok(())
     }

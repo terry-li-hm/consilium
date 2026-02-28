@@ -38,6 +38,7 @@ pub const COUNCIL: &[ModelEntry] = &[
 ];
 
 pub const JUDGE_MODEL: &str = "anthropic/claude-opus-4-6";
+pub const COMPRESSION_MODEL: &str = "meta-llama/llama-3.3-70b-instruct";
 pub const CRITIQUE_MODEL: &str = "google/gemini-3.1-pro-preview";
 pub const CLASSIFIER_MODEL: &str = "anthropic/claude-opus-4-6"; // same as judge
 pub const EXTRACTION_MODEL: &str = "anthropic/claude-haiku-4-5";
@@ -79,7 +80,7 @@ const THINKING_MODEL_SUFFIXES: &[&str] = &[
 ];
 
 pub fn is_thinking_model(model: &str) -> bool {
-    let model_name = model.split('/').last().unwrap_or(model).to_lowercase();
+    let model_name = model.split('/').next_back().unwrap_or(model).to_lowercase();
     THINKING_MODEL_SUFFIXES
         .iter()
         .any(|suffix| model_name == *suffix)
@@ -192,7 +193,7 @@ pub fn detect_consensus(
     // Check explicit CONSENSUS: signals
     let consensus_count = filtered
         .iter()
-        .filter(|&&&&(_, ref text)| text.to_uppercase().contains("CONSENSUS:"))
+        .filter(|&&&(_, text)| text.to_uppercase().contains("CONSENSUS:"))
         .count();
     if consensus_count >= threshold {
         return (true, "explicit consensus signals");
@@ -207,7 +208,7 @@ pub fn detect_consensus(
     ];
     let agreement_count = filtered
         .iter()
-        .filter(|&&&&(_, ref text)| {
+        .filter(|&&&(_, text)| {
             let lower = text.to_lowercase();
             agreement_phrases
                 .iter()

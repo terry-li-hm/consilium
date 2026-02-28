@@ -405,7 +405,7 @@ pub async fn query_model_async(
     retries: u32,
     cost_tracker: Option<&CostTracker>,
 ) -> (String, String, String) {
-    let model_name = model.split('/').last().unwrap_or(model).to_string();
+    let model_name = model.split('/').next_back().unwrap_or(model).to_string();
 
     let response = query_model(
         client,

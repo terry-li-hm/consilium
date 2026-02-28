@@ -128,7 +128,7 @@ pub async fn run_redteam(
             .collect();
 
         let other1 = other_names
-            .get(0)
+            .first()
             .cloned()
             .unwrap_or_else(|| "another attacker".to_string());
         let other2 = other_names

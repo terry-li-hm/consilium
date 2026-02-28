@@ -299,7 +299,7 @@ pub async fn decompose_question(
 ) -> Vec<String> {
     let client = Client::new();
 
-    let judge_name = JUDGE_MODEL.split('/').last().unwrap_or(JUDGE_MODEL);
+    let judge_name = JUDGE_MODEL.split('/').next_back().unwrap_or(JUDGE_MODEL);
     let _ = output.write_str(&format!("### Question Decomposition ({judge_name})\n"));
 
     let messages = vec![
@@ -350,6 +350,48 @@ pub async fn decompose_question(
         fallback
     } else {
         vec![question.to_string()]
+    }
+}
+
+async fn compress_round_context(
+    round_responses: &[(String, String)],
+    question: &str,
+    client: &Client,
+    api_key: &str,
+    cost_tracker: &CostTracker,
+) -> String {
+    let mut round_summary = String::new();
+    for (name, response) in round_responses {
+        round_summary.push_str(&format!("**{name}**: {response}\n\n"));
+    }
+
+    let prompt = format!(
+        "Summarize this debate round. For each speaker, capture:\n1. Core position (1 sentence)\n2. Key new argument or rebuttal (1 sentence)\n3. Whether they agree/disagree with majority\n\nKeep exact quotes only if they contain specific data points or citations.\n\nQuestion: {question}\n\nRound responses:\n{round_summary}"
+    );
+
+    let messages = vec![Message::user(prompt)];
+
+    let result = query_model(
+        client,
+        api_key,
+        crate::config::COMPRESSION_MODEL,
+        &messages,
+        500,
+        30.0,
+        2,
+        Some(cost_tracker),
+    )
+    .await;
+
+    if result.starts_with("[Error:") {
+        // Fallback: original responses concatenated
+        round_responses
+            .iter()
+            .map(|(name, response)| format!("{name}: {response}"))
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    } else {
+        result
     }
 }
 
@@ -620,6 +662,7 @@ pub async fn run_council(
     let _ = output.write_str("\n\n");
 
     let mut conversation: Vec<(String, String)> = Vec::new();
+    let mut compressed_summaries: Vec<String> = Vec::new();
     let mut output_parts: Vec<String> = Vec::new();
     let mut confidences: HashMap<String, Vec<u8>> = HashMap::new();
     let mut current_round = 0usize;
@@ -762,21 +805,46 @@ pub async fn run_council(
 
             let mut messages = vec![Message::system(system_prompt), Message::user(user_content)];
 
-            for (speaker, text) in &conversation {
-                if is_error_response(text) {
-                    continue;
+            if !thorough && !compressed_summaries.is_empty() {
+                for (i, summary) in compressed_summaries.iter().enumerate() {
+                    messages.push(Message::user(format!("Summary of Round {}:\n{}", i + 1, summary)));
                 }
-                let speaker_dname = display_names
-                    .get(speaker)
-                    .cloned()
-                    .unwrap_or_else(|| speaker.clone());
-                let sanitized_text = sanitize_speaker_content(text);
-                if speaker == name {
-                    messages.push(Message::assistant(sanitized_text));
-                } else {
-                    messages.push(Message::user(format!(
-                        "[{speaker_dname}]: {sanitized_text}"
-                    )));
+
+                let current_round_start_idx = round_num * council_config.len();
+                for (speaker, text) in conversation.iter().skip(current_round_start_idx) {
+                    if is_error_response(text) {
+                        continue;
+                    }
+                    let speaker_dname = display_names
+                        .get(speaker)
+                        .cloned()
+                        .unwrap_or_else(|| speaker.clone());
+                    let sanitized_text = sanitize_speaker_content(text);
+                    if speaker == name {
+                        messages.push(Message::assistant(sanitized_text));
+                    } else {
+                        messages.push(Message::user(format!(
+                            "[{speaker_dname}]: {sanitized_text}"
+                        )));
+                    }
+                }
+            } else {
+                for (speaker, text) in &conversation {
+                    if is_error_response(text) {
+                        continue;
+                    }
+                    let speaker_dname = display_names
+                        .get(speaker)
+                        .cloned()
+                        .unwrap_or_else(|| speaker.clone());
+                    let sanitized_text = sanitize_speaker_content(text);
+                    if speaker == name {
+                        messages.push(Message::assistant(sanitized_text));
+                    } else {
+                        messages.push(Message::user(format!(
+                            "[{speaker_dname}]: {sanitized_text}"
+                        )));
+                    }
                 }
             }
 
@@ -786,7 +854,7 @@ pub async fn run_council(
                 ""
             };
 
-            let model_name = model.split('/').last().unwrap_or(model);
+            let model_name = model.split('/').next_back().unwrap_or(model);
             let _ = output.write_str(&format!("### {model_name}{challenger_indicator}\n"));
 
             let (speaker_name, model_name, response) = query_model_async(
@@ -829,6 +897,21 @@ pub async fn run_council(
                 break;
             }
         }
+
+        if !thorough && rounds > 1 && round_num < rounds - 1 {
+            let round_start = round_num * council_config.len();
+            let round_responses = &conversation[round_start..];
+            let _ = output.write_str(&format!("(compressing round {} context...)\n", round_num + 1));
+            let summary = compress_round_context(
+                round_responses,
+                question,
+                &client,
+                api_key,
+                &cost_tracker,
+            )
+            .await;
+            compressed_summaries.push(summary);
+        }
     }
 
     let mut confidence_line: Option<String> = None;
@@ -843,7 +926,7 @@ pub async fn run_council(
                 let model_name = council_config
                     .iter()
                     .find(|(n, _, _)| *n == name)
-                    .map(|(_, model, _)| model.split('/').last().unwrap_or(model).to_string())
+                    .map(|(_, model, _)| model.split('/').next_back().unwrap_or(model).to_string())
                     .unwrap_or_else(|| name.to_string());
 
                 if scores.len() >= 2 {
@@ -954,7 +1037,7 @@ pub async fn run_council(
             )),
         ];
 
-        let judge_name = JUDGE_MODEL.split('/').last().unwrap_or(JUDGE_MODEL);
+        let judge_name = JUDGE_MODEL.split('/').next_back().unwrap_or(JUDGE_MODEL);
         let _ = output.write_str(&format!("### Judge ({judge_name})\n"));
 
         let mut judge_response = query_model(
@@ -988,7 +1071,7 @@ pub async fn run_council(
                 )),
             ];
 
-            let critique_name = CRITIQUE_MODEL.split('/').last().unwrap_or(CRITIQUE_MODEL);
+            let critique_name = CRITIQUE_MODEL.split('/').next_back().unwrap_or(CRITIQUE_MODEL);
             let _ = output.write_str(&format!("### Critique ({critique_name})\n"));
 
             let critique_response = query_model(
@@ -1111,7 +1194,7 @@ pub async fn run_council(
                 .get(name)
                 .cloned()
                 .unwrap_or_else(|| name.to_string());
-            let model_name = model.split('/').last().unwrap_or(model);
+            let model_name = model.split('/').next_back().unwrap_or(model);
 
             transcript =
                 transcript.replace(&format!("### {anon_name}"), &format!("### {model_name}"));

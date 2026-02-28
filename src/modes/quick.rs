@@ -24,7 +24,7 @@ async fn run_quick_streaming(
     let mut out = Vec::with_capacity(models.len());
 
     for &(name, model, fallback) in models {
-        let model_name = model.split('/').last().unwrap_or(model).to_string();
+        let model_name = model.split('/').next_back().unwrap_or(model).to_string();
 
         let _ = output.write_str(&format!("### {model_name}\n"));
 
@@ -181,7 +181,7 @@ pub async fn run_quick(
                     "timestamp": Local::now().to_rfc3339(),
                     "models_used": models
                         .iter()
-                        .map(|(_, model, _)| model.split('/').last().unwrap_or(model).to_string())
+                        .map(|(_, model, _)| model.split('/').next_back().unwrap_or(model).to_string())
                         .collect::<Vec<_>>(),
                     "duration_seconds": (duration * 10.0).round() / 10.0,
                     "estimated_cost_usd": total_cost,

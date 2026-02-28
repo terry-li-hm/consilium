@@ -31,7 +31,7 @@ pub fn list_sessions() {
     let mut entries = match fs::read_dir(&sessions_dir) {
         Ok(dir) => dir
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "md"))
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
             .collect::<Vec<_>>(),
         Err(e) => {
             eprintln!("Failed to read sessions directory: {e}");
@@ -237,7 +237,7 @@ pub fn view_session(term: Option<&str>) {
     let mut entries = match fs::read_dir(&sessions_dir) {
         Ok(dir) => dir
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "md"))
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
             .collect::<Vec<_>>(),
         Err(e) => {
             eprintln!("Failed to read sessions directory: {e}");
@@ -317,7 +317,7 @@ pub fn search_sessions(term: &str) {
     let mut entries = match fs::read_dir(&sessions_dir) {
         Ok(dir) => dir
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "md"))
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
             .collect::<Vec<_>>(),
         Err(e) => {
             eprintln!("Failed to read sessions directory: {e}");

@@ -189,7 +189,7 @@ async fn main() {
                 let target = target.to_lowercase();
                 COUNCIL.iter().position(|(name, model, _)| {
                     name.to_lowercase() == target
-                        || model.split('/').last().unwrap_or(model).to_lowercase() == target
+                        || model.split('/').next_back().unwrap_or(model).to_lowercase() == target
                         || model.to_lowercase() == target
                 })
             });

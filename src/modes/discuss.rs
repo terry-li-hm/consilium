@@ -13,6 +13,48 @@ use crate::session::Output;
 use reqwest::Client;
 use std::time::Instant;
 
+async fn compress_round_context(
+    round_responses: &[(String, String)],
+    question: &str,
+    client: &Client,
+    api_key: &str,
+    cost_tracker: &CostTracker,
+) -> String {
+    let mut round_summary = String::new();
+    for (name, response) in round_responses {
+        round_summary.push_str(&format!("**{name}**: {response}\n\n"));
+    }
+
+    let prompt = format!(
+        "Summarize this roundtable round. For each speaker (host and panelists), capture:\n1. Core position or steering direction (1 sentence)\n2. Key new argument, rebuttal, or probe (1 sentence)\n3. Whether they agree/disagree with the emerging consensus\n\nKeep exact quotes only if they contain specific data points or citations.\n\nTopic: {question}\n\nRound responses:\n{round_summary}"
+    );
+
+    let messages = vec![Message::user(prompt)];
+
+    let result = query_model(
+        client,
+        api_key,
+        crate::config::COMPRESSION_MODEL,
+        &messages,
+        500,
+        30.0,
+        2,
+        Some(cost_tracker),
+    )
+    .await;
+
+    if result.starts_with("[Error:") {
+        // Fallback: original responses concatenated
+        round_responses
+            .iter()
+            .map(|(name, response)| format!("{name}: {response}"))
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    } else {
+        result
+    }
+}
+
 pub async fn run_discuss(
     question: &str,
     panelists: &[ModelEntry],
@@ -24,7 +66,7 @@ pub async fn run_discuss(
     _format: &str,
     timeout: f64,
     output: &mut dyn Output,
-    _thorough: bool,
+    thorough: bool,
 ) -> SessionResult {
     let start = Instant::now();
     let cost_tracker = CostTracker::new();
@@ -39,6 +81,7 @@ pub async fn run_discuss(
 
     let mut transcript_parts = Vec::new();
     let mut conversation_history: Vec<(String, String)> = Vec::new();
+    let mut compressed_summaries: Vec<String> = Vec::new();
 
     let _ = output.write_str("============================================================\n");
     if is_socratic {
@@ -145,16 +188,39 @@ pub async fn run_discuss(
             discuss_host_steer()
         };
 
-        let history_text = conversation_history
-            .iter()
-            .map(|(speaker, text)| {
-                format!(
+        let history_text = if !thorough && !compressed_summaries.is_empty() {
+            let mut parts = Vec::new();
+            let opening_len = 1 + panelists.len();
+            for (speaker, text) in conversation_history.iter().take(opening_len) {
+                parts.push(format!(
                     "**{speaker}**: {text}",
                     text = sanitize_speaker_content(text)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n\n");
+                ));
+            }
+            for (i, summary) in compressed_summaries.iter().enumerate() {
+                parts.push(format!("Summary of Round {}:\n{}", i + 1, summary));
+            }
+            let current_round_start_idx =
+                opening_len + compressed_summaries.len() * (1 + panelists.len());
+            for (speaker, text) in conversation_history.iter().skip(current_round_start_idx) {
+                parts.push(format!(
+                    "**{speaker}**: {text}",
+                    text = sanitize_speaker_content(text)
+                ));
+            }
+            parts.join("\n\n")
+        } else {
+            conversation_history
+                .iter()
+                .map(|(speaker, text)| {
+                    format!(
+                        "**{speaker}**: {text}",
+                        text = sanitize_speaker_content(text)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        };
 
         let steer_messages = vec![
             Message::system(steer_system),
@@ -191,16 +257,39 @@ pub async fn run_discuss(
                 "The host just asked a follow-up. Give your response."
             };
 
-            let history_text = conversation_history
-                .iter()
-                .map(|(speaker, text)| {
-                    format!(
+            let history_text = if !thorough && !compressed_summaries.is_empty() {
+                let mut parts = Vec::new();
+                let opening_len = 1 + panelists.len();
+                for (speaker, text) in conversation_history.iter().take(opening_len) {
+                    parts.push(format!(
                         "**{speaker}**: {text}",
                         text = sanitize_speaker_content(text)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n\n");
+                    ));
+                }
+                for (i, summary) in compressed_summaries.iter().enumerate() {
+                    parts.push(format!("Summary of Round {}:\n{}", i + 1, summary));
+                }
+                let current_round_start_idx =
+                    opening_len + compressed_summaries.len() * (1 + panelists.len());
+                for (speaker, text) in conversation_history.iter().skip(current_round_start_idx) {
+                    parts.push(format!(
+                        "**{speaker}**: {text}",
+                        text = sanitize_speaker_content(text)
+                    ));
+                }
+                parts.join("\n\n")
+            } else {
+                conversation_history
+                    .iter()
+                    .map(|(speaker, text)| {
+                        format!(
+                            "**{speaker}**: {text}",
+                            text = sanitize_speaker_content(text)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+            };
 
             let panelist_messages = vec![
                 Message::system(panelist_system),
@@ -223,6 +312,26 @@ pub async fn run_discuss(
             let _ = output.write_str(&format!("{}\n\n", response));
             transcript_parts.push(format!("### {name}\n{response}"));
             conversation_history.push((name.to_string(), response));
+        }
+
+        if !thorough && rounds > 1 && round_num < rounds {
+            let opening_len = 1 + panelists.len();
+            let round_size = 1 + panelists.len();
+            let round_start = opening_len + (round_num - 1) as usize * round_size;
+            let round_responses = &conversation_history[round_start..];
+            let _ = output.write_str(&format!(
+                "(compressing round {} context...)\n",
+                round_num
+            ));
+            let summary = compress_round_context(
+                round_responses,
+                question,
+                &client,
+                api_key,
+                &cost_tracker,
+            )
+            .await;
+            compressed_summaries.push(summary);
         }
     }
 
