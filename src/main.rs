@@ -1,5 +1,8 @@
 use clap::Parser;
 use consilium::cli::Cli;
+use consilium::config::quick_models;
+use consilium::modes::run_quick;
+use consilium::session::finish_session;
 
 #[tokio::main]
 async fn main() {
@@ -19,9 +22,44 @@ async fn main() {
         }
     };
 
-    let mode = args.explicit_mode().unwrap_or("council");
+    let api_key = match std::env::var("OPENROUTER_API_KEY") {
+        Ok(v) if !v.trim().is_empty() => v,
+        _ => {
+            eprintln!("Error: OPENROUTER_API_KEY environment variable not set");
+            std::process::exit(1);
+        }
+    };
+    let google_api_key = std::env::var("GOOGLE_API_KEY").ok();
 
-    // TODO: mode dispatch
+    if args.quick {
+        let models = quick_models();
+        let result = run_quick(
+            &question,
+            &models,
+            &api_key,
+            google_api_key.as_deref(),
+            !args.quiet,
+            &args.format,
+            args.timeout,
+        )
+        .await;
+
+        finish_session(
+            &question,
+            &result,
+            "quick",
+            "",
+            args.no_save,
+            args.output.as_deref(),
+            args.share,
+            args.quiet,
+            None,
+        );
+
+        std::process::exit(0);
+    }
+
+    let mode = args.explicit_mode().unwrap_or("council");
     eprintln!("Mode '{mode}' for question: {question}");
-    eprintln!("Not yet implemented — see phases 2-6");
+    eprintln!("Not yet implemented — quick mode is available in this phase.");
 }
