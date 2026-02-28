@@ -1,0 +1,71 @@
+# consilium
+
+> Multi-model deliberation CLI. 5 frontier models debate, then Claude Opus judges.
+
+## What it does
+
+consilium queries multiple frontier LLMs (GPT-5.2, Gemini 3.1 Pro, Grok 4, DeepSeek-R1, GLM-5) in parallel, runs structured deliberation rounds, then has Claude Opus 4.6 synthesize a recommendation using Analysis of Competing Hypotheses. Auto-routes questions by difficulty.
+
+## Modes
+
+- **council** (default): Blind phase → cross-pollination → debate with rotating challenger → judge synthesis → CollabEval critique → structured extraction. ~$0.50
+- **quick**: Parallel independent queries, no debate. ~$0.10
+- **oxford**: Binary for/against debate with constructive, rebuttal, closing rounds + verdict. ~$0.40
+- **redteam**: Adversarial stress-test of a plan. Host analysis → parallel attacks → deepening → triage. ~$0.20
+- **discuss**: Hosted roundtable exploration with multiple rounds. ~$0.30
+- **socratic**: Probing questions to expose assumptions. ~$0.30
+- **solo**: Single model debates itself in multiple roles. ~$0.40
+- **deep**: Council + auto-decompose + 2 debate rounds. ~$0.90
+
+## Architecture
+
+Rust binary (4.7MB). Single tokio runtime, async throughout.
+
+- `src/config.rs` — Model constants, CostTracker (AtomicU64), consensus detection, utility functions
+- `src/api.rs` — OpenRouter HTTP client, SSE streaming, Google AI Studio fallback, parallel queries, retry with backoff
+- `src/prompts.rs` — All prompt templates (council, oxford, redteam, discuss, socratic, solo)
+- `src/session.rs` — Output trait (StdoutOutput/TeeOutput), LiveWriter, session save/share/history
+- `src/modes/council.rs` — Full council deliberation with blind, xpol, debate, judge, CollabEval, extraction
+- `src/modes/quick.rs` — Parallel streaming queries
+- `src/modes/oxford.rs` — Oxford debate format
+- `src/modes/redteam.rs` — Adversarial stress-test
+- `src/modes/discuss.rs` — Roundtable + socratic variants
+- `src/modes/solo.rs` — Self-debate in roles
+- `src/admin.rs` — Session management (stats, list, view, search)
+- `src/watch.rs` — Live terminal watcher with crossterm styling
+- `src/tui.rs` — Full TUI with ratatui (Flexoki dark theme)
+- `src/cli.rs` — Clap derive struct (~30 flags)
+
+## Key design decisions
+
+- Error-as-string: `query_model()` returns String. Errors start with `[Error:`. Partial failures don't abort sessions.
+- CostTracker uses AtomicU64 storing micro-dollars for lock-free accumulation across tokio tasks.
+- Manual SSE parsing (~40 lines). Handles DeepSeek-R1 `<think>` blocks and OpenAI reasoning_details.
+- Output trait enables TeeOutput (stdout + live-{pid}.md file) for watch/TUI to tail.
+- Consensus detection excludes the challenger from agreement counting.
+- Rotating challenger: `(challenger_idx + round_num) % council.len()`
+
+## Usage
+
+```bash
+consilium "question"                          # auto-routes
+consilium "question" --quick                  # parallel, no debate
+consilium "question" --council --format json  # full council, JSON output
+consilium "question" --oxford                 # binary debate
+consilium "question" --redteam                # stress-test a plan
+consilium "question" --deep                   # decompose + 2 rounds
+consilium --stats                             # usage statistics
+consilium --tui                               # live TUI viewer
+```
+
+## Requirements
+
+- OPENROUTER_API_KEY environment variable (required)
+- GOOGLE_API_KEY environment variable (optional, Gemini fallback)
+
+## Build
+
+```bash
+cargo build --release
+# Binary: target/release/consilium
+```
