@@ -1,10 +1,13 @@
 [package]
 name = "consilium"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
-description = "Multi-model deliberation CLI"
+description = "Multi-model deliberation CLI — 5 frontier LLMs debate, then Claude judges"
 license = "MIT"
 repository = "https://github.com/terry-li-hm/consilium"
+homepage = "https://consilium.sh"
+keywords = ["llm", "deliberation", "cli", "ai", "multi-model"]
+categories = ["command-line-utilities"]
 
 [[bin]]
 name = "consilium"
