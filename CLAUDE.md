@@ -2,7 +2,7 @@
 
 ## Overview
 
-Multi-model deliberation CLI in Rust. Queries frontier LLMs via OpenRouter, runs structured debate, Claude Opus judges. 6,400 lines across 17 source files.
+Multi-model deliberation CLI in Rust. Queries frontier LLMs via OpenRouter, runs structured debate, Claude Opus judges. ~7,100 lines across 14 source files.
 
 ## Build & Test
 
@@ -19,7 +19,7 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 - **Single tokio runtime** — all mode functions are `async fn`, one `#[tokio::main]`
 - **Error-as-string** — `query_model()` returns `String`, errors start with `[Error:`. No `Result<>` that forces early returns. Partial failures don't abort sessions.
 - **CostTracker** — `AtomicU64` storing micro-dollars, lock-free across tokio tasks
-- **Output trait** — `StdoutOutput` / `TeeOutput` implementations, threaded through all mode functions
+- **Output trait** — `StdoutOutput` / `TeeOutput` / `CompactTeeOutput` implementations, threaded through all mode functions. Lifecycle hooks: `begin_phase` owns `streaming_phase`; `begin_participant` must not reset it.
 - **Manual SSE parsing** — ~40 lines in `api.rs`. Handles DeepSeek-R1 `<think>` blocks and OpenAI `reasoning_details`
 
 ## Key patterns
@@ -41,21 +41,20 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `config.rs` | 722 | Constants, types, CostTracker, utility functions, 58 tests |
+| `config.rs` | 812 | Constants, types, CostTracker, utility functions, 58 tests |
 | `api.rs` | 753 | HTTP clients, SSE streaming, parallel queries, retry, fallback |
 | `prompts.rs` | 582 | All prompt templates (verbatim port from Python) |
-| `session.rs` | 381 | Output trait, LiveWriter, session save/share/history |
-| `modes/council.rs` | 1160 | Full council deliberation |
-| `modes/discuss.rs` | 330 | Roundtable + socratic |
-| `modes/oxford.rs` | 265 | Oxford debate |
-| `modes/solo.rs` | 257 | Self-debate in roles |
-| `modes/quick.rs` | 222 | Parallel streaming |
-| `modes/redteam.rs` | 221 | Adversarial stress-test |
-| `admin.rs` | 342 | Stats, sessions, view, search |
-| `tui.rs` | 422 | Ratatui TUI (Flexoki dark) |
+| `session.rs` | 805 | Output trait + CompactTeeOutput, LiveWriter, session save/share/history |
+| `modes/council.rs` | 1310 | Full council deliberation |
+| `modes/discuss.rs` | 478 | Roundtable + socratic |
+| `modes/oxford.rs` | 307 | Oxford debate |
+| `modes/quick.rs` | 241 | Parallel streaming |
+| `modes/redteam.rs` | 256 | Adversarial stress-test |
+| `admin.rs` | 488 | Stats, sessions, view, search |
+| `tui.rs` | 420 | Ratatui TUI (Flexoki dark) |
 | `watch.rs` | 275 | Crossterm live watcher |
-| `cli.rs` | 189 | Clap derive struct (~30 flags) |
-| `main.rs` | 233 | Entry point + mode dispatch |
+| `cli.rs` | 175 | Clap derive struct (~30 flags) |
+| `main.rs` | 235 | Entry point + mode dispatch |
 
 ## Testing
 
