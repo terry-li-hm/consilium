@@ -166,7 +166,6 @@ pub async fn run_discuss(
     }
 
     for (name, _, response) in opening_results {
-        let _ = output.begin_participant(&name);
         let _ = output.write_str(&format!("### {name}\n{response}\n\n"));
         let _ = output.end_participant(&name, &response, 0);
         transcript_parts.push(format!("### {name}\n{response}"));
@@ -402,7 +401,6 @@ pub async fn run_discuss(
     .await;
 
     for (name, _, response) in closing_results {
-        let _ = output.begin_participant(&name);
         let _ = output.write_str(&format!("### {name}\n{response}\n\n"));
         let _ = output.end_participant(&name, &response, 0);
         transcript_parts.push(format!("### {name}\n{response}"));

@@ -20,25 +20,32 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::Instant;
 
-static ARRAY_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)\[.*?\]").unwrap());
+static ARRAY_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)\[.*?\]").expect("valid regex"));
 static BULLET_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\s*(?:[-*]|\d+[.)])\s*").unwrap());
+    LazyLock::new(|| Regex::new(r"^\s*(?:[-*]|\d+[.)])\s*").expect("valid regex"));
 
 static RE_RECOMMENDATION: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)## Recommendation[^\n]*\n(.*?)(?:\n## |\z)").unwrap());
+    LazyLock::new(|| {
+        Regex::new(r"(?s)## Recommendation[^\n]*\n(.*?)(?:\n## |\z)").expect("valid regex")
+    });
 static RE_DO_NOW: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)### Do Now[^\n]*\n(.*?)(?:\n### |\z)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?s)### Do Now[^\n]*\n(.*?)(?:\n### |\z)").expect("valid regex"));
 static RE_DO_NOW_BOLD: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\*\*\d+\.\s*(.+?)\*\*").unwrap());
+    LazyLock::new(|| Regex::new(r"\*\*\d+\.\s*(.+?)\*\*").expect("valid regex"));
 static RE_CONSIDER: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)### Consider Later[^\n]*\n(.*?)(?:\n### |\z)").unwrap());
+    LazyLock::new(|| {
+        Regex::new(r"(?s)### Consider Later[^\n]*\n(.*?)(?:\n### |\z)").expect("valid regex")
+    });
 static RE_SKIP: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)### Skip[^\n]*\n(.*?)(?:\n### |\n---|\z)").unwrap());
+    LazyLock::new(|| {
+        Regex::new(r"(?s)### Skip[^\n]*\n(.*?)(?:\n### |\n---|\z)").expect("valid regex")
+    });
 static RE_BULLET_BOLD: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^[-*]\s+\*\*(.+?)\*\*").unwrap());
+    LazyLock::new(|| Regex::new(r"(?m)^[-*]\s+\*\*(.+?)\*\*").expect("valid regex"));
 
 static RE_SYNTHESIS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)## Synthesis[^\n]*\n(.*?)(?:\n## |\z)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?s)## Synthesis[^\n]*\n(.*?)(?:\n## |\z)").expect("valid regex"));
 
 #[derive(Debug, Clone, Default)]
 struct RecommendationItems {
@@ -454,7 +461,6 @@ async fn run_blind_phase_parallel(
     .await;
 
     for (_, model_name, claims) in &result {
-        let _ = output.begin_participant(model_name);
         let _ = output.write_str(&format!("\n### {model_name}\n{claims}\n\n"));
         let _ = output.end_participant(model_name, claims, 0);
     }
@@ -517,7 +523,6 @@ async fn run_xpol_phase_parallel(
     .await;
 
     for (_, model_name, claims) in &result {
-        let _ = output.begin_participant(model_name);
         let _ = output.write_str(&format!("\n### {model_name}\n{claims}\n\n"));
         let _ = output.end_participant(model_name, claims, 0);
     }

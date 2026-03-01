@@ -400,13 +400,18 @@ impl Output for CompactTeeOutput {
             return Ok(());
         }
 
-        self.clear_spinner_line()?;
-
         let summary = extract_summary(full_response);
         let elapsed_secs = elapsed_ms / 1000;
         let mut out = io::stdout();
-        writeln!(out, "  {name}  ✓  ({elapsed_secs}s)")?;
-        writeln!(out, "  {summary}\n")?;
+        if elapsed_ms == 0 {
+            // Parallel-collected result — no spinner was shown, no time to display
+            writeln!(out, "  {name}  ✓")?;
+            writeln!(out, "  {summary}\n")?;
+        } else {
+            self.clear_spinner_line()?;
+            writeln!(out, "  {name}  ✓  ({elapsed_secs}s)")?;
+            writeln!(out, "  {summary}\n")?;
+        }
         out.flush()?;
 
         self.buffer.clear();

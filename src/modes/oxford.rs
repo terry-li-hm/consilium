@@ -139,7 +139,6 @@ pub async fn run_oxford(
     let prop_constructive = constructive_results[0].2.clone();
     let opp_constructive = constructive_results[1].2.clone();
     for (name, _, response) in &constructive_results {
-        let _ = output.begin_participant(name);
         let _ = output.write_str(&format!("### {name}\n{response}\n\n"));
         let _ = output.end_participant(name, response, 0);
     }
@@ -193,7 +192,6 @@ pub async fn run_oxford(
     let prop_rebuttal = rebuttal_results[0].2.clone();
     let opp_rebuttal = rebuttal_results[1].2.clone();
     for (name, _, response) in &rebuttal_results {
-        let _ = output.begin_participant(name);
         let _ = output.write_str(&format!("### {name}\n{response}\n\n"));
         let _ = output.end_participant(name, response, 0);
     }
@@ -237,7 +235,6 @@ pub async fn run_oxford(
     let prop_closing = closing_results[0].2.clone();
     let opp_closing = closing_results[1].2.clone();
     for (name, _, response) in &closing_results {
-        let _ = output.begin_participant(name);
         let _ = output.write_str(&format!("### {name}\n{response}\n\n"));
         let _ = output.end_participant(name, response, 0);
     }
