@@ -7,7 +7,7 @@ use consilium::config::{
 };
 use consilium::modes::{council, discuss, oxford, quick, redteam};
 use consilium::session::{
-    finish_session, prepare_live_session_path, setup_live_output, CompactTeeOutput, StdoutOutput,
+    finish_session, prepare_live_session_path, setup_live_output, AgentOutput, HumanOutput,
 };
 use std::io::IsTerminal;
 use std::os::unix::io::AsRawFd;
@@ -115,10 +115,10 @@ async fn main() {
         setup_live_output(effective_quiet, color)
     } else if stdout_is_file_redirect() {
         // Stdout redirected to a file (e.g. background capture) — write full token stream
-        Box::new(StdoutOutput::new(false))
+        Box::new(AgentOutput::new(None, false))
     } else {
         let session_file_path = prepare_live_session_path();
-        Box::new(CompactTeeOutput::new(&session_file_path, color))
+        Box::new(HumanOutput::new(&session_file_path, color))
     };
 
     let result = match mode.as_str() {

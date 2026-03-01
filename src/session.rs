@@ -108,16 +108,18 @@ fn render_colored_line(
     out.flush()
 }
 
-pub struct StdoutOutput {
+pub struct AgentOutput {
+    file: Option<BufWriter<fs::File>>,
     color: bool,
     line_buf: String,
     prev_type: Option<LineType>,
     flushed_partial: bool,
 }
 
-impl StdoutOutput {
-    pub fn new(color: bool) -> Self {
+impl AgentOutput {
+    pub fn new(file: Option<fs::File>, color: bool) -> Self {
         Self {
+            file: file.map(BufWriter::new),
             color,
             line_buf: String::new(),
             prev_type: None,
@@ -126,73 +128,12 @@ impl StdoutOutput {
     }
 }
 
-impl Output for StdoutOutput {
+impl Output for AgentOutput {
     fn write_str(&mut self, s: &str) -> io::Result<()> {
-        if !self.color {
-            print!("{s}");
-            return io::stdout().flush();
+        if let Some(file) = &mut self.file {
+            file.write_all(s.as_bytes())?;
+            file.flush()?;
         }
-
-        self.line_buf.push_str(s);
-        let mut out = io::stdout();
-
-        while let Some(newline_pos) = self.line_buf.find('\n') {
-            let line = self.line_buf[..newline_pos].to_string();
-            self.line_buf.drain(..=newline_pos);
-
-            if self.flushed_partial {
-                // Rest of a partial line — already printed prefix as plain text
-                writeln!(out, "{line}")?;
-                out.flush()?;
-                self.flushed_partial = false;
-            } else {
-                let line_type = classify(&line, self.prev_type);
-                render_colored_line(&mut out, &line, self.prev_type)?;
-                self.prev_type = Some(line_type);
-            }
-        }
-
-        // Flush any remaining partial line as plain text (streaming UX)
-        if !self.line_buf.is_empty() && !self.flushed_partial {
-            write!(out, "{}", self.line_buf)?;
-            out.flush()?;
-            self.flushed_partial = true;
-        }
-
-        Ok(())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        io::stdout().flush()
-    }
-}
-
-pub struct TeeOutput {
-    file: fs::File,
-    color: bool,
-    line_buf: String,
-    prev_type: Option<LineType>,
-    flushed_partial: bool,
-}
-
-impl TeeOutput {
-    pub fn new(path: &Path, color: bool) -> io::Result<Self> {
-        let file = fs::File::create(path)?;
-        Ok(Self {
-            file,
-            color,
-            line_buf: String::new(),
-            prev_type: None,
-            flushed_partial: false,
-        })
-    }
-}
-
-impl Output for TeeOutput {
-    fn write_str(&mut self, s: &str) -> io::Result<()> {
-        // File always gets plain text
-        self.file.write_all(s.as_bytes())?;
-        self.file.flush()?;
 
         if !self.color {
             print!("{s}");
@@ -227,12 +168,15 @@ impl Output for TeeOutput {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        let _ = io::stdout().flush();
-        self.file.flush()
+        io::stdout().flush()?;
+        if let Some(file) = &mut self.file {
+            file.flush()?;
+        }
+        Ok(())
     }
 }
 
-pub struct CompactTeeOutput {
+pub struct HumanOutput {
     file: Option<BufWriter<fs::File>>,
     color: bool,
     buffer: String,
@@ -245,7 +189,7 @@ pub struct CompactTeeOutput {
 
 const SPINNER: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-impl CompactTeeOutput {
+impl HumanOutput {
     pub fn new(path: &Path, color: bool) -> Self {
         let file = fs::File::create(path).ok().map(BufWriter::new);
         Self {
@@ -333,7 +277,7 @@ fn extract_summary(full_response: &str) -> String {
     summary
 }
 
-impl Output for CompactTeeOutput {
+impl Output for HumanOutput {
     fn write_str(&mut self, s: &str) -> io::Result<()> {
         if let Some(file) = &mut self.file {
             file.write_all(s.as_bytes())?;
@@ -472,15 +416,12 @@ pub fn prepare_live_session_path() -> PathBuf {
 
 pub fn setup_live_output(quiet: bool, color: bool) -> Box<dyn Output> {
     if quiet {
-        return Box::new(StdoutOutput::new(false));
+        return Box::new(AgentOutput::new(None, false));
     }
 
     let live_pid_path = prepare_live_session_path();
-
-    match TeeOutput::new(&live_pid_path, color) {
-        Ok(tee) => Box::new(tee),
-        Err(_) => Box::new(StdoutOutput::new(color)),
-    }
+    let file = fs::File::create(&live_pid_path).ok();
+    Box::new(AgentOutput::new(file, color))
 }
 
 fn mode_title(mode: &str) -> &'static str {
