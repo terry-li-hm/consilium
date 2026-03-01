@@ -75,9 +75,6 @@ consilium "Future of open-source AI models?" --discuss --rounds 2
 
 # Socratic examination (~$0.30)
 consilium "Is consciousness computable?" --socratic
-
-# Solo — Claude debates itself in roles (~$0.40)
-consilium "Pricing strategy for B2B SaaS" --solo --roles "investor,founder,customer"
 ```
 
 ## Modes
@@ -92,24 +89,23 @@ consilium "Pricing strategy for B2B SaaS" --solo --roles "investor,founder,custo
 | Red Team | `--redteam` | ~$0.20 | Adversarial stress-test |
 | Discuss | `--discuss` | ~$0.30 | Hosted roundtable |
 | Socratic | `--socratic` | ~$0.30 | Assumption-probing examination |
-| Solo | `--solo` | ~$0.40 | Single model, multiple roles |
 
 ## Key flags
 
 ```
---format json|yaml|prose    Output format (json only for council/quick)
 --persona "context"         Personal context injected into prompts
 --domain banking|healthcare Domain-specific regulatory context
---challenger gemini         Assign contrarian role
+--challenger gemini         Assign contrarian role (council mode)
 --decompose                 Break question into sub-questions first
---xpol                      Cross-pollination phase
---followup                  Interactive drill-down after synthesis
+--xpol                      Cross-pollination phase (council mode)
+--followup                  Interactive drill-down after synthesis (council mode)
 --rounds N                  Rounds for discuss/socratic (0 = unlimited)
+--thorough                  Disable early consensus exit
 --output file.md            Save transcript to file
+--format json|yaml|prose    Output format
 --share                     Upload to secret GitHub gist
---quiet                     Suppress live output
+--quiet                     Suppress live output (auto-enabled when not a TTY)
 --no-save                   Don't auto-save session
---no-judge                  Skip judge synthesis
 ```
 
 ## Session management
@@ -123,12 +119,11 @@ consilium --search "AI"     # Search session content
 consilium --watch           # Live tail (styled terminal)
 consilium --tui             # Full TUI viewer
 consilium --doctor          # Check API keys and connectivity
-consilium --list-roles      # Predefined roles for --solo
 ```
 
 ## Architecture
 
-6,400 lines of Rust. Single 4.7MB binary, ~50ms cold start.
+~6,100 lines of Rust. Single 4.7MB binary, ~50ms cold start.
 
 - Single tokio runtime, async throughout
 - SSE streaming with `<think>` block filtering (DeepSeek-R1, OpenAI reasoning)
