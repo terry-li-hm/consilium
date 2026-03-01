@@ -63,10 +63,6 @@ pub struct Cli {
     #[arg(long)]
     pub challenger: Option<String>,
 
-    /// Motion for Oxford debate (auto-generated if not provided)
-    #[arg(long)]
-    pub motion: Option<String>,
-
     /// Comma-separated roles for solo mode (default: Advocate,Skeptic,Pragmatist)
     #[arg(long)]
     pub roles: Option<String>,
@@ -88,21 +84,9 @@ pub struct Cli {
     #[arg(long)]
     pub no_save: bool,
 
-    /// Skip judge synthesis (council mode)
-    #[arg(long)]
-    pub no_judge: bool,
-
     /// Quiet mode (minimal output)
     #[arg(short, long)]
     pub quiet: bool,
-
-    /// Claude Code-friendly mode (quiet + structured summary)
-    #[arg(long)]
-    pub cc: bool,
-
-    /// Disable colored output
-    #[arg(long)]
-    pub no_color: bool,
 
     /// API timeout in seconds
     #[arg(long, default_value = "300")]
@@ -157,10 +141,6 @@ pub struct Cli {
     /// Print version
     #[arg(long)]
     pub version_flag: bool,
-
-    /// Prompt for session rating (1-5) after completion
-    #[arg(long)]
-    pub feedback: bool,
 
     /// Skip early consensus exit and context compression (full deliberation)
     #[arg(long)]
