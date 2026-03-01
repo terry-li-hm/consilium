@@ -96,6 +96,10 @@ pub struct Cli {
     #[arg(short, long)]
     pub quiet: bool,
 
+    /// Claude Code-friendly mode (quiet + structured summary)
+    #[arg(long)]
+    pub cc: bool,
+
     /// Disable colored output
     #[arg(long)]
     pub no_color: bool,

@@ -20,6 +20,18 @@ pub trait Output: Send + Sync {
     fn flush(&mut self) -> io::Result<()>;
 }
 
+pub struct NullOutput;
+
+impl Output for NullOutput {
+    fn write_str(&mut self, _s: &str) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 fn render_colored_line(
     out: &mut impl Write,
     line: &str,
@@ -219,7 +231,7 @@ impl Output for TeeOutput {
 
 pub fn setup_live_output(quiet: bool, color: bool) -> Box<dyn Output> {
     if quiet {
-        return Box::new(StdoutOutput::new(false));
+        return Box::new(NullOutput);
     }
 
     let sessions_dir = get_sessions_dir();
