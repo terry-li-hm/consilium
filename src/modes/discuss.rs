@@ -93,6 +93,9 @@ pub async fn run_discuss(
 
     // Phase 1: FRAMING / QUESTIONS
     let opening_label = if is_socratic { "Questions" } else { "Opening" };
+    let _ = output.begin_phase(&opening_label.to_ascii_uppercase());
+    let framing_t0 = Instant::now();
+    let _ = output.begin_participant(host_name);
     let _ = output.write_str(&format!("## {}\n### {}\n", opening_label, host_name));
 
     let framing_system = if is_socratic {
@@ -116,6 +119,11 @@ pub async fn run_discuss(
     .await;
 
     let _ = output.write_str(&format!("{}\n\n", host_framing));
+    let _ = output.end_participant(
+        host_name,
+        &host_framing,
+        framing_t0.elapsed().as_millis() as u64,
+    );
     transcript_parts.push(format!("## {}\n\n### {}\n{}", opening_label, host_name, host_framing));
     conversation_history.push((host_name.to_string(), host_framing.clone()));
 
@@ -149,7 +157,7 @@ pub async fn run_discuss(
         google_api_key,
         500,
         Some(&cost_tracker),
-        Some(output),
+        None,
     )
     .await;
 
@@ -158,6 +166,9 @@ pub async fn run_discuss(
     }
 
     for (name, _, response) in opening_results {
+        let _ = output.begin_participant(&name);
+        let _ = output.write_str(&format!("### {name}\n{response}\n\n"));
+        let _ = output.end_participant(&name, &response, 0);
         transcript_parts.push(format!("### {name}\n{response}"));
         conversation_history.push((name, response));
     }
@@ -175,11 +186,14 @@ pub async fn run_discuss(
         }
 
         round_num += 1;
+        let _ = output.begin_phase(&format!("{} {}", round_label.to_ascii_uppercase(), round_num));
 
         let _ = output.write_str(&format!("## {} {}\n\n", round_label, round_num));
         transcript_parts.push(format!("## {} {}", round_label, round_num));
 
         // Host steering / probing
+        let host_steer_t0 = Instant::now();
+        let _ = output.begin_participant(host_name);
         let _ = output.write_str(&format!("### {}\n", host_name));
 
         let steer_system = if is_socratic {
@@ -240,6 +254,11 @@ pub async fn run_discuss(
         .await;
 
         let _ = output.write_str(&format!("{}\n\n", host_steer));
+        let _ = output.end_participant(
+            host_name,
+            &host_steer,
+            host_steer_t0.elapsed().as_millis() as u64,
+        );
         transcript_parts.push(format!("### {}\n{}", host_name, host_steer));
         conversation_history.push((host_name.to_string(), host_steer));
 
@@ -296,6 +315,8 @@ pub async fn run_discuss(
                 Message::user(format!("Topic: {question}\n\n{history_label} so far:\n\n{history_text}\n\n{follow_up_cue}")),
             ];
 
+            let panelist_t0 = Instant::now();
+            let _ = output.begin_participant(name);
             let _ = output.write_str(&format!("### {name}\n"));
             let response = query_model(
                 &client,
@@ -310,6 +331,11 @@ pub async fn run_discuss(
             .await;
 
             let _ = output.write_str(&format!("{}\n\n", response));
+            let _ = output.end_participant(
+                name,
+                &response,
+                panelist_t0.elapsed().as_millis() as u64,
+            );
             transcript_parts.push(format!("### {name}\n{response}"));
             conversation_history.push((name.to_string(), response));
         }
@@ -336,6 +362,7 @@ pub async fn run_discuss(
     }
 
     // Phase 3: CLOSING
+    let _ = output.begin_phase("CLOSING");
     let _ = output.write_str("## Closing\n\n");
     transcript_parts.push("## Closing".to_string());
 
@@ -370,11 +397,14 @@ pub async fn run_discuss(
         google_api_key,
         300,
         Some(&cost_tracker),
-        Some(output),
+        None,
     )
     .await;
 
     for (name, _, response) in closing_results {
+        let _ = output.begin_participant(&name);
+        let _ = output.write_str(&format!("### {name}\n{response}\n\n"));
+        let _ = output.end_participant(&name, &response, 0);
         transcript_parts.push(format!("### {name}\n{response}"));
         conversation_history.push((name, response));
     }
@@ -405,10 +435,13 @@ pub async fn run_discuss(
     ];
 
     if is_socratic {
+        let _ = output.begin_phase("SYNTHESIS");
         let _ = output.write_str("## Synthesis\n\n");
         transcript_parts.push("## Synthesis".to_string());
     }
 
+    let host_closing_t0 = Instant::now();
+    let _ = output.begin_participant(host_name);
     let _ = output.write_str(&format!("### {}\n", host_name));
 
     let host_closing = query_model(
@@ -424,6 +457,11 @@ pub async fn run_discuss(
     .await;
 
     let _ = output.write_str(&format!("{}\n\n", host_closing));
+    let _ = output.end_participant(
+        host_name,
+        &host_closing,
+        host_closing_t0.elapsed().as_millis() as u64,
+    );
     transcript_parts.push(format!("### {}\n{}", host_name, host_closing));
 
     let duration = start.elapsed().as_secs_f64();

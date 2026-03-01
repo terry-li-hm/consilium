@@ -34,9 +34,12 @@ pub async fn run_oxford(
     let _ = output.write_str("============================================================\n\n");
 
     // Phase 1: MOTION
+    let _ = output.begin_phase("MOTION");
     let motion = if let Some(m) = motion_override {
         m
     } else {
+        let motion_t0 = Instant::now();
+        let _ = output.begin_participant("Judge (Claude)");
         let _ = output.write_str("## Motion\n\n");
         let m_messages = vec![
             Message::system(oxford_motion_transform(question)),
@@ -55,6 +58,11 @@ pub async fn run_oxford(
         .await;
         let m = m.trim().trim_matches('"').to_string();
         let _ = output.write_str(&format!("{}\n\n", m));
+        let _ = output.end_participant(
+            "Judge (Claude)",
+            &m,
+            motion_t0.elapsed().as_millis() as u64,
+        );
         m
     };
     transcript_parts.push(format!("## Motion\n\n{motion}"));
@@ -72,6 +80,9 @@ pub async fn run_oxford(
     transcript_parts.push(format!("**Proposition:** {prop_name} | **Opposition:** {opp_name}"));
 
     // Phase 2: PRIOR
+    let _ = output.begin_phase("PRIOR");
+    let prior_t0 = Instant::now();
+    let _ = output.begin_participant("Judge (Claude)");
     let _ = output.write_str("## Prior\n### Judge (Claude)\n");
     let prior_messages = vec![
         Message::system(oxford_judge_prior(&motion)),
@@ -89,9 +100,15 @@ pub async fn run_oxford(
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", prior_response));
+    let _ = output.end_participant(
+        "Judge (Claude)",
+        &prior_response,
+        prior_t0.elapsed().as_millis() as u64,
+    );
     transcript_parts.push(format!("## Prior\n\n### Judge (Claude)\n{prior_response}"));
 
     // Phase 3: CONSTRUCTIVE (parallel)
+    let _ = output.begin_phase("CONSTRUCTIVE SPEECHES");
     let _ = output.write_str("## Constructive Speeches\n(both sides arguing in parallel...)\n");
     let prop_system = oxford_constructive_system(prop_name, "FOR", &motion);
     let opp_system = oxford_constructive_system(opp_name, "AGAINST", &motion);
@@ -115,12 +132,17 @@ pub async fn run_oxford(
         google_api_key,
         800,
         Some(&cost_tracker),
-        Some(output),
+        None,
     )
     .await;
 
     let prop_constructive = constructive_results[0].2.clone();
     let opp_constructive = constructive_results[1].2.clone();
+    for (name, _, response) in &constructive_results {
+        let _ = output.begin_participant(name);
+        let _ = output.write_str(&format!("### {name}\n{response}\n\n"));
+        let _ = output.end_participant(name, response, 0);
+    }
 
     transcript_parts.push(format!(
         "## Constructive Speeches\n\n### {prop_name} (Proposition)\n{prop_constructive}"
@@ -130,6 +152,7 @@ pub async fn run_oxford(
     ));
 
     // Phase 4: REBUTTAL (parallel)
+    let _ = output.begin_phase("REBUTTALS");
     let _ = output.write_str("## Rebuttals\n(both sides rebutting in parallel...)\n");
     let prop_rebuttal_system = oxford_rebuttal_system(
         prop_name,
@@ -163,12 +186,17 @@ pub async fn run_oxford(
         google_api_key,
         600,
         Some(&cost_tracker),
-        Some(output),
+        None,
     )
     .await;
 
     let prop_rebuttal = rebuttal_results[0].2.clone();
     let opp_rebuttal = rebuttal_results[1].2.clone();
+    for (name, _, response) in &rebuttal_results {
+        let _ = output.begin_participant(name);
+        let _ = output.write_str(&format!("### {name}\n{response}\n\n"));
+        let _ = output.end_participant(name, response, 0);
+    }
 
     transcript_parts.push(format!(
         "## Rebuttals\n\n### {prop_name} (Proposition rebuttal)\n{prop_rebuttal}"
@@ -178,6 +206,7 @@ pub async fn run_oxford(
     ));
 
     // Phase 5: CLOSING (parallel)
+    let _ = output.begin_phase("CLOSING STATEMENTS");
     let _ = output.write_str("## Closing Statements\n(both sides closing in parallel...)\n");
     let prop_closing_system = oxford_closing_system(prop_name, "FOR", &motion);
     let opp_closing_system = oxford_closing_system(opp_name, "AGAINST", &motion);
@@ -201,12 +230,17 @@ pub async fn run_oxford(
         google_api_key,
         400,
         Some(&cost_tracker),
-        Some(output),
+        None,
     )
     .await;
 
     let prop_closing = closing_results[0].2.clone();
     let opp_closing = closing_results[1].2.clone();
+    for (name, _, response) in &closing_results {
+        let _ = output.begin_participant(name);
+        let _ = output.write_str(&format!("### {name}\n{response}\n\n"));
+        let _ = output.end_participant(name, response, 0);
+    }
 
     transcript_parts.push(format!(
         "## Closing Statements\n\n### {prop_name} (Proposition closing)\n{prop_closing}"
@@ -216,6 +250,9 @@ pub async fn run_oxford(
     ));
 
     // Phase 6: VERDICT
+    let verdict_t0 = Instant::now();
+    let _ = output.begin_participant("Judge (Claude)");
+    let _ = output.begin_phase("JUDGMENT");
     let _ = output.write_str("## Verdict\n### Judge (Claude)\n");
     let debate_transcript = format!(
         "### Proposition ({prop_name}) — Constructive\n{prop_constructive}\n\n### Opposition ({opp_name}) — Constructive\n{opp_constructive}\n\n### Proposition ({prop_name}) — Rebuttal\n{prop_rebuttal}\n\n### Opposition ({opp_name}) — Rebuttal\n{opp_rebuttal}\n\n### Proposition ({prop_name}) — Closing\n{prop_closing}\n\n### Opposition ({opp_name}) — Closing\n{opp_closing}",
@@ -249,6 +286,11 @@ pub async fn run_oxford(
     .await;
 
     let _ = output.write_str(&format!("{}\n\n", verdict));
+    let _ = output.end_participant(
+        "Judge (Claude)",
+        &verdict,
+        verdict_t0.elapsed().as_millis() as u64,
+    );
     transcript_parts.push(format!("## Verdict\n\n### Judge (Claude)\n{verdict}"));
 
     let duration = start.elapsed().as_secs_f64();

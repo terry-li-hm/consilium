@@ -6,7 +6,9 @@ use consilium::config::{
     discuss_models, oxford_models, quick_models, redteam_models, CostTracker, COUNCIL,
 };
 use consilium::modes::{council, discuss, oxford, quick, redteam};
-use consilium::session::{finish_session, setup_live_output};
+use consilium::session::{
+    finish_session, prepare_live_session_path, setup_live_output, CompactTeeOutput,
+};
 use std::io::IsTerminal;
 
 #[tokio::main]
@@ -98,7 +100,12 @@ async fn main() {
     };
 
     let color = std::env::var("NO_COLOR").is_err() && std::io::stdout().is_terminal();
-    let mut output = setup_live_output(effective_quiet, color);
+    let mut output: Box<dyn consilium::session::Output> = if args.stream || args.quiet {
+        setup_live_output(effective_quiet, color)
+    } else {
+        let session_file_path = prepare_live_session_path();
+        Box::new(CompactTeeOutput::new(&session_file_path, color))
+    };
 
     let result = match mode.as_str() {
         "quick" => {

@@ -34,6 +34,9 @@ pub async fn run_redteam(
     let _ = output.write_str("============================================================\n\n");
 
     // Phase 1: ANALYSIS
+    let _ = output.begin_phase("ANALYSIS");
+    let analysis_t0 = Instant::now();
+    let _ = output.begin_participant("Host (Claude)");
     let _ = output.write_str("## Analysis\n### Host (Claude)\n");
     let analysis_messages = vec![
         Message::system(redteam_host_analysis()),
@@ -51,10 +54,16 @@ pub async fn run_redteam(
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", host_analysis));
+    let _ = output.end_participant(
+        "Host (Claude)",
+        &host_analysis,
+        analysis_t0.elapsed().as_millis() as u64,
+    );
     transcript_parts.push(format!("## Analysis\n\n### Host (Claude)\n{host_analysis}"));
     conversation_history.push(("Host (Claude)".to_string(), host_analysis.clone()));
 
     // Phase 2: ATTACKS (parallel)
+    let _ = output.begin_phase("ATTACKS");
     let _ = output.write_str(&format!("## Attacks\n(querying {} attackers in parallel...)\n", panelists.len()));
     let mut attack_messages_list = Vec::with_capacity(panelists.len());
     for (name, _, _) in panelists {
@@ -73,12 +82,15 @@ pub async fn run_redteam(
         google_api_key,
         600,
         Some(&cost_tracker),
-        Some(output),
+        None,
     )
     .await;
 
     transcript_parts.push("## Attacks".to_string());
     for (name, _, response) in attack_results {
+        let _ = output.begin_participant(&name);
+        let _ = output.write_str(&format!("### {name}\n{response}\n\n"));
+        let _ = output.end_participant(&name, &response, 0);
         transcript_parts.push(format!("### {name}\n{response}"));
         conversation_history.push((name, response));
     }
@@ -86,6 +98,9 @@ pub async fn run_redteam(
     let _ = output.write_str("\n");
 
     // Phase 3: DEEPENING (Host)
+    let _ = output.begin_phase("DEEPENING");
+    let deepen_t0 = Instant::now();
+    let _ = output.begin_participant("Host (Claude)");
     let _ = output.write_str("## Deepening\n### Host (Claude)\n");
     let attacks_text = conversation_history[1..]
         .iter()
@@ -116,6 +131,11 @@ pub async fn run_redteam(
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", host_deepen));
+    let _ = output.end_participant(
+        "Host (Claude)",
+        &host_deepen,
+        deepen_t0.elapsed().as_millis() as u64,
+    );
     transcript_parts.push(format!("## Deepening\n\n### Host (Claude)\n{host_deepen}"));
     conversation_history.push(("Host (Claude)".to_string(), host_deepen));
 
@@ -156,6 +176,8 @@ pub async fn run_redteam(
             )),
         ];
 
+        let attacker_t0 = Instant::now();
+        let _ = output.begin_participant(name);
         let _ = output.write_str(&format!("### {name}\n"));
         let response = query_model(
             &client,
@@ -170,11 +192,19 @@ pub async fn run_redteam(
         .await;
 
         let _ = output.write_str(&format!("{}\n\n", response));
+        let _ = output.end_participant(
+            name,
+            &response,
+            attacker_t0.elapsed().as_millis() as u64,
+        );
         transcript_parts.push(format!("### {name}\n{response}"));
         conversation_history.push((name.to_string(), response));
     }
 
     // Phase 5: TRIAGE
+    let _ = output.begin_phase("TRIAGE");
+    let triage_t0 = Instant::now();
+    let _ = output.begin_participant("Host (Claude)");
     let _ = output.write_str("## Triage\n### Host (Claude)\n");
     let full_history = conversation_history
         .iter()
@@ -205,6 +235,11 @@ pub async fn run_redteam(
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", host_triage));
+    let _ = output.end_participant(
+        "Host (Claude)",
+        &host_triage,
+        triage_t0.elapsed().as_millis() as u64,
+    );
     transcript_parts.push(format!("## Triage\n\n### Host (Claude)\n{host_triage}"));
 
     let duration = start.elapsed().as_secs_f64();

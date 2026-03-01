@@ -98,6 +98,10 @@ pub struct Cli {
     #[arg(short, long, help_heading = "Output")]
     pub quiet: bool,
 
+    /// Stream raw tokens instead of compact participant summaries
+    #[arg(long, default_value_t = false, help_heading = "Output")]
+    pub stream: bool,
+
     /// API timeout in seconds
     #[arg(long, default_value = "300", help_heading = "Output")]
     pub timeout: f64,

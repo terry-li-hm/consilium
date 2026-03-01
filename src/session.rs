@@ -7,10 +7,11 @@ use crossterm::style::{Attribute, Color, Stylize};
 use regex::Regex;
 use serde_json::{Map, Value};
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
+use std::time::Instant;
 
 #[cfg(unix)]
 use libc;
@@ -18,6 +19,20 @@ use libc;
 pub trait Output: Send + Sync {
     fn write_str(&mut self, s: &str) -> io::Result<()>;
     fn flush(&mut self) -> io::Result<()>;
+    fn begin_participant(&mut self, _name: &str) -> io::Result<()> {
+        Ok(())
+    }
+    fn end_participant(
+        &mut self,
+        _name: &str,
+        _full_response: &str,
+        _elapsed_ms: u64,
+    ) -> io::Result<()> {
+        Ok(())
+    }
+    fn begin_phase(&mut self, _phase_name: &str) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 fn render_colored_line(
@@ -217,31 +232,211 @@ impl Output for TeeOutput {
     }
 }
 
-pub fn setup_live_output(quiet: bool, color: bool) -> Box<dyn Output> {
-    if quiet {
-        return Box::new(StdoutOutput::new(false));
+pub struct CompactTeeOutput {
+    file: Option<BufWriter<fs::File>>,
+    color: bool,
+    buffer: String,
+    current_model: String,
+    start_time: Instant,
+    spinner_idx: usize,
+    token_count: usize,
+    streaming_phase: bool,
+}
+
+const SPINNER: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+impl CompactTeeOutput {
+    pub fn new(path: &Path, color: bool) -> Self {
+        let file = fs::File::create(path).ok().map(BufWriter::new);
+        Self {
+            file,
+            color,
+            buffer: String::new(),
+            current_model: String::new(),
+            start_time: Instant::now(),
+            spinner_idx: 0,
+            token_count: 0,
+            streaming_phase: false,
+        }
     }
 
+    fn clear_spinner_line(&mut self) -> io::Result<()> {
+        let mut out = io::stdout();
+        write!(out, "\r{}\r", " ".repeat(80))?;
+        out.flush()
+    }
+
+    fn write_phase_banner(&mut self, phase_name: &str) -> io::Result<()> {
+        let mut out = io::stdout();
+        if self.color {
+            writeln!(
+                out,
+                "{}",
+                format!(" {phase_name} ")
+                    .with(Color::Cyan)
+                    .attribute(Attribute::Bold)
+            )?;
+        } else {
+            writeln!(out, " {phase_name} ")?;
+        }
+        out.flush()
+    }
+}
+
+fn extract_summary(full_response: &str) -> String {
+    static STRIP_PREFIX_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^\s*(?:[-*>]+|\d+[.)])\s*").expect("valid regex"));
+
+    let mut lines = Vec::new();
+    let mut in_code_fence = false;
+    let mut char_count = 0usize;
+
+    for raw_line in full_response.lines() {
+        let trimmed = raw_line.trim();
+
+        if trimmed.starts_with("```") {
+            in_code_fence = !in_code_fence;
+            continue;
+        }
+        if in_code_fence || trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if trimmed.len() >= 3 && trimmed.chars().all(|c| c == '-') {
+            continue;
+        }
+
+        let cleaned = STRIP_PREFIX_RE.replace(trimmed, "").trim().to_string();
+        if cleaned.is_empty() {
+            continue;
+        }
+
+        lines.push(cleaned.clone());
+        char_count += cleaned.chars().count();
+
+        if lines.len() >= 2 || char_count >= 200 {
+            break;
+        }
+    }
+
+    let mut summary = lines.join(" ");
+    if summary.is_empty() {
+        summary = "No summary available.".to_string();
+    }
+
+    if summary.chars().count() > 220 {
+        summary = format!("{}...", summary.chars().take(217).collect::<String>());
+    }
+
+    summary
+}
+
+impl Output for CompactTeeOutput {
+    fn write_str(&mut self, s: &str) -> io::Result<()> {
+        if let Some(file) = &mut self.file {
+            file.write_all(s.as_bytes())?;
+            file.flush()?;
+        }
+
+        if self.streaming_phase {
+            print!("{s}");
+            return io::stdout().flush();
+        }
+
+        self.buffer.push_str(s);
+        self.token_count += s.split_whitespace().count();
+        let steps = self.token_count / 5;
+        if steps > self.spinner_idx {
+            self.spinner_idx = steps;
+            let elapsed = self.start_time.elapsed().as_secs();
+            let spinner = SPINNER[self.spinner_idx % SPINNER.len()];
+            let mut out = io::stdout();
+            write!(
+                out,
+                "\r  {}  {} {}s",
+                self.current_model.as_str(),
+                spinner,
+                elapsed
+            )?;
+            out.flush()?;
+        }
+
+        Ok(())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        if let Some(file) = &mut self.file {
+            file.flush()?;
+        }
+        io::stdout().flush()
+    }
+
+    fn begin_participant(&mut self, name: &str) -> io::Result<()> {
+        self.current_model = name.to_string();
+        self.buffer.clear();
+        self.start_time = Instant::now();
+        self.spinner_idx = 0;
+        self.token_count = 0;
+        self.streaming_phase = false;
+
+        let mut out = io::stdout();
+        write!(out, "  {name}  ⠙ deliberating...")?;
+        out.flush()
+    }
+
+    fn end_participant(
+        &mut self,
+        name: &str,
+        full_response: &str,
+        elapsed_ms: u64,
+    ) -> io::Result<()> {
+        self.clear_spinner_line()?;
+
+        let summary = extract_summary(full_response);
+        let elapsed_secs = elapsed_ms / 1000;
+        let mut out = io::stdout();
+        writeln!(out, "  {name}  ✓  ({elapsed_secs}s)")?;
+        writeln!(out, "  {summary}\n")?;
+        out.flush()?;
+
+        self.buffer.clear();
+        Ok(())
+    }
+
+    fn begin_phase(&mut self, phase_name: &str) -> io::Result<()> {
+        self.clear_spinner_line()?;
+        if let Some(file) = &mut self.file {
+            writeln!(file, "{phase_name}")?;
+            file.flush()?;
+        }
+
+        self.write_phase_banner(phase_name)?;
+        let upper = phase_name.to_ascii_uppercase();
+        self.streaming_phase = upper.contains("JUDGMENT") || upper.contains("JUDGE");
+        Ok(())
+    }
+}
+
+pub fn prepare_live_session_path() -> PathBuf {
     let sessions_dir = get_sessions_dir();
     let live_dir = sessions_dir.parent().unwrap();
     let pid = std::process::id();
     let live_pid_path = live_dir.join(format!("live-{}.md", pid));
     let live_link = live_dir.join("live.md");
 
-    // Clean up stale live files
     #[cfg(unix)]
     if let Ok(entries) = fs::read_dir(live_dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if name.starts_with("live-") && name.ends_with(".md") && path != live_pid_path {
-                    // Try to parse PID
                     if let Some(old_pid_str) = name
                         .strip_prefix("live-")
                         .and_then(|s| s.strip_suffix(".md"))
                     {
                         if let Ok(old_pid) = old_pid_str.parse::<i32>() {
-                            // Check if process is alive (signal 0)
                             let is_alive = unsafe { libc::kill(old_pid, 0) == 0 };
                             if !is_alive {
                                 let _ = fs::remove_file(&path);
@@ -253,16 +448,24 @@ pub fn setup_live_output(quiet: bool, color: bool) -> Box<dyn Output> {
         }
     }
 
+    let _ = fs::remove_file(&live_link);
+    #[cfg(unix)]
+    {
+        let _ = std::os::unix::fs::symlink(live_pid_path.file_name().unwrap(), &live_link);
+    }
+
+    live_pid_path
+}
+
+pub fn setup_live_output(quiet: bool, color: bool) -> Box<dyn Output> {
+    if quiet {
+        return Box::new(StdoutOutput::new(false));
+    }
+
+    let live_pid_path = prepare_live_session_path();
+
     match TeeOutput::new(&live_pid_path, color) {
-        Ok(tee) => {
-            // Update symlink
-            let _ = fs::remove_file(&live_link);
-            #[cfg(unix)]
-            {
-                let _ = std::os::unix::fs::symlink(live_pid_path.file_name().unwrap(), &live_link);
-            }
-            Box::new(tee)
-        }
+        Ok(tee) => Box::new(tee),
         Err(_) => Box::new(StdoutOutput::new(color)),
     }
 }

@@ -421,6 +421,7 @@ async fn run_blind_phase_parallel(
     let mut blind_system = council_blind_system();
     blind_system = append_optional_context(blind_system, domain_hint, false, persona);
 
+    let _ = output.begin_phase("BLIND PHASE");
     let _ = output.write_str(&"=".repeat(60));
     let _ = output.write_str("\nBLIND PHASE (independent claims)\n");
     let _ = output.write_str(&"=".repeat(60));
@@ -448,9 +449,15 @@ async fn run_blind_phase_parallel(
         google_api_key,
         1500,
         Some(cost_tracker),
-        Some(output),
+        None,
     )
     .await;
+
+    for (_, model_name, claims) in &result {
+        let _ = output.begin_participant(model_name);
+        let _ = output.write_str(&format!("\n### {model_name}\n{claims}\n\n"));
+        let _ = output.end_participant(model_name, claims, 0);
+    }
 
     let _ = output.write_str("\n");
 
@@ -472,6 +479,7 @@ async fn run_xpol_phase_parallel(
     let mut xpol_system = council_xpol_system();
     xpol_system = append_optional_context(xpol_system, domain_hint, false, persona);
 
+    let _ = output.begin_phase("CROSS-POLLINATION PHASE");
     let _ = output.write_str(&"=".repeat(60));
     let _ = output.write_str("\nCROSS-POLLINATION PHASE (extend, don't argue)\n");
     let _ = output.write_str(&"=".repeat(60));
@@ -504,9 +512,15 @@ async fn run_xpol_phase_parallel(
         google_api_key,
         1500,
         Some(cost_tracker),
-        Some(output),
+        None,
     )
     .await;
+
+    for (_, model_name, claims) in &result {
+        let _ = output.begin_participant(model_name);
+        let _ = output.write_str(&format!("\n### {model_name}\n{claims}\n\n"));
+        let _ = output.end_participant(model_name, claims, 0);
+    }
 
     let _ = output.write_str("\n");
 
@@ -529,6 +543,7 @@ pub async fn run_followup_discussion(
     let followup_models = &council_config[..council_config.len().min(2)];
     let mut transcript_parts = vec![format!("### Followup Discussion: {topic}\n")];
 
+    let _ = output.begin_phase("FOLLOWUP DISCUSSION");
     let _ = output.write_str("\n");
     let _ = output.write_str(&"=".repeat(60));
     let _ = output.write_str(&format!("\nFOLLOWUP: {topic}\n"));
@@ -549,6 +564,8 @@ pub async fn run_followup_discussion(
     followup_system = append_optional_context(followup_system, domain_hint, social_mode, persona);
 
     for &(name, model, fallback) in followup_models {
+        let participant_t0 = Instant::now();
+        let _ = output.begin_participant(name);
         let _ = output.write_str(&format!("### {name}\n"));
 
         let messages = vec![
@@ -573,6 +590,7 @@ pub async fn run_followup_discussion(
         .await;
 
         let _ = output.write_str(&format!("{response}\n\n"));
+        let _ = output.end_participant(name, &response, participant_t0.elapsed().as_millis() as u64);
 
         transcript_parts.push(format!("### {model_name}\n{response}\n"));
     }
@@ -759,6 +777,7 @@ pub async fn run_council(
     let rounds = rounds.max(1);
 
     for round_num in 0..rounds {
+        let _ = output.begin_phase(&format!("DEBATE ROUND {}", round_num + 1));
         current_round = round_num + 1;
         let mut round_speakers = Vec::new();
 
@@ -867,6 +886,8 @@ pub async fn run_council(
             };
 
             let model_name = model.split('/').next_back().unwrap_or(model);
+            let speaker_t0 = Instant::now();
+            let _ = output.begin_participant(model_name);
             let _ = output.write_str(&format!("### {model_name}{challenger_indicator}\n"));
 
             let (speaker_name, model_name, response) = query_model_async(
@@ -884,6 +905,11 @@ pub async fn run_council(
             .await;
 
             let _ = output.write_str(&format!("{response}\n\n"));
+            let _ = output.end_participant(
+                &model_name,
+                &response,
+                speaker_t0.elapsed().as_millis() as u64,
+            );
 
             if is_error_response(&response) {
                 failed_models.push(format!("{model_name}: {response}"));
@@ -1050,6 +1076,9 @@ pub async fn run_council(
         ];
 
         let judge_name = JUDGE_MODEL.split('/').next_back().unwrap_or(JUDGE_MODEL);
+        let judge_t0 = Instant::now();
+        let _ = output.begin_participant(&format!("Judge ({judge_name})"));
+        let _ = output.begin_phase("JUDGMENT");
         let _ = output.write_str(&format!("### Judge ({judge_name})\n"));
 
         let mut judge_response = query_model(
@@ -1065,6 +1094,11 @@ pub async fn run_council(
         .await;
 
         let _ = output.write_str(&format!("{judge_response}\n\n"));
+        let _ = output.end_participant(
+            &format!("Judge ({judge_name})"),
+            &judge_response,
+            judge_t0.elapsed().as_millis() as u64,
+        );
 
         output_parts.push(format!("### Judge ({judge_name})\n{judge_response}"));
 
@@ -1084,6 +1118,9 @@ pub async fn run_council(
             ];
 
             let critique_name = CRITIQUE_MODEL.split('/').next_back().unwrap_or(CRITIQUE_MODEL);
+            let critique_t0 = Instant::now();
+            let _ = output.begin_participant(&format!("Critique ({critique_name})"));
+            let _ = output.begin_phase("JUDGMENT");
             let _ = output.write_str(&format!("### Critique ({critique_name})\n"));
 
             let critique_response = query_model(
@@ -1099,6 +1136,11 @@ pub async fn run_council(
             .await;
 
             let _ = output.write_str(&format!("{critique_response}\n\n"));
+            let _ = output.end_participant(
+                &format!("Critique ({critique_name})"),
+                &critique_response,
+                critique_t0.elapsed().as_millis() as u64,
+            );
 
             output_parts.push(format!(
                 "### Critique ({critique_name})\n{critique_response}"
@@ -1108,6 +1150,9 @@ pub async fn run_council(
                 let _ = output.write_str("(Critique unavailable — synthesis is unreviewed)\n\n");
                 output_parts.push("*(Critique unavailable — synthesis is unreviewed)*".to_string());
             } else {
+                let final_t0 = Instant::now();
+                let _ = output.begin_participant(&format!("Final Synthesis ({judge_name})"));
+                let _ = output.begin_phase("JUDGMENT");
                 let _ = output.write_str(&format!("### Final Synthesis ({judge_name})\n"));
 
                 let mut revision_messages = judge_messages.clone();
@@ -1129,6 +1174,11 @@ pub async fn run_council(
                 .await;
 
                 let _ = output.write_str(&format!("{final_response}\n\n"));
+                let _ = output.end_participant(
+                    &format!("Final Synthesis ({judge_name})"),
+                    &final_response,
+                    final_t0.elapsed().as_millis() as u64,
+                );
 
                 output_parts.push(format!(
                     "### Final Synthesis ({judge_name})\n{final_response}"

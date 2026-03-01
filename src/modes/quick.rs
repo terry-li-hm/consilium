@@ -20,6 +20,7 @@ async fn run_quick_streaming(
     output: &mut dyn Output,
 ) -> Vec<(String, String, String)> {
     let client = Client::new();
+    let _ = output.begin_phase("QUICK RESPONSES");
     let full_question = match context {
         Some(ctx) => format!("CONTEXT:\n{ctx}\n\nQUESTION:\n{question}"),
         None => question.to_string(),
@@ -30,6 +31,8 @@ async fn run_quick_streaming(
 
     for &(name, model, fallback) in models {
         let model_name = model.split('/').next_back().unwrap_or(model).to_string();
+        let participant_start = Instant::now();
+        let _ = output.begin_participant(&model_name);
 
         let _ = output.write_str(&format!("### {model_name}\n"));
 
@@ -72,6 +75,11 @@ async fn run_quick_streaming(
         }
 
         let _ = output.write_str("\n");
+        let _ = output.end_participant(
+            &model_name,
+            &response,
+            participant_start.elapsed().as_millis() as u64,
+        );
 
         out.push((
             name.to_string(),
