@@ -82,7 +82,7 @@ Key test categories:
 
 ## Maintenance
 
-After any session that modifies source files: run `wc -l src/**/*.rs src/modes/*.rs` and update the module map line counts above. Takes 30 seconds; keeps the map accurate for future delegates.
+Module map line counts are **auto-updated by pre-commit hook** (`scripts/update-module-map.py`). No manual step needed. New files must still be added to the map manually (with purpose description) — the hook only updates counts for existing entries.
 
 ## Delegation notes
 
