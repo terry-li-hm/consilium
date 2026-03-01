@@ -42,19 +42,21 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 | File | Lines | Purpose |
 |------|-------|---------|
 | `config.rs` | 812 | Constants, types, CostTracker, utility functions, 58 tests |
-| `api.rs` | 753 | HTTP clients, SSE streaming, parallel queries, retry, fallback |
-| `prompts.rs` | 582 | All prompt templates (verbatim port from Python) |
-| `session.rs` | 810 | Output trait + CompactTeeOutput, LiveWriter, session save/share/history |
-| `modes/council.rs` | 1315 | Full council deliberation |
-| `modes/discuss.rs` | 476 | Roundtable + socratic |
-| `modes/oxford.rs` | 304 | Oxford debate |
-| `modes/quick.rs` | 241 | Parallel streaming |
-| `modes/redteam.rs` | 255 | Adversarial stress-test |
-| `admin.rs` | 488 | Stats, sessions, view, search |
-| `tui.rs` | 420 | Ratatui TUI (Flexoki dark) |
+| `api.rs` | 756 | HTTP clients, SSE streaming, parallel queries, retry, fallback |
+| `prompts.rs` | 719 | All prompt templates (verbatim port from Python) |
+| `session.rs` | 821 | Output trait + CompactTeeOutput, LiveWriter, session save/share/history |
+| `modes/council.rs` | 1324 | Full council deliberation |
+| `modes/discuss.rs` | 492 | Roundtable + socratic |
+| `modes/oxford.rs` | 301 | Oxford debate |
+| `modes/quick.rs` | 244 | Parallel streaming |
+| `modes/redteam.rs` | 254 | Adversarial stress-test |
+| `modes/premortem.rs` | 201 | Pre-mortem: assume failure, work backward |
+| `modes/forecast.rs` | 196 | Superforecasting: probability estimates + reconciliation |
+| `admin.rs` | 485 | Stats, sessions, view, search |
+| `tui.rs` | 433 | Ratatui TUI (Flexoki dark) |
 | `watch.rs` | 275 | Crossterm live watcher |
-| `cli.rs` | 175 | Clap derive struct (~30 flags) |
-| `main.rs` | 235 | Entry point + mode dispatch |
+| `cli.rs` | 191 | Clap derive struct (~30 flags) |
+| `main.rs` | 276 | Entry point + mode dispatch |
 
 ## Testing
 
