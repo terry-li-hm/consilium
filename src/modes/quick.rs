@@ -22,7 +22,7 @@ async fn run_quick_streaming(
     let client = Client::new();
     let _ = output.begin_phase("QUICK RESPONSES");
     let full_question = match context {
-        Some(ctx) => format!("CONTEXT:\n{ctx}\n\nQUESTION:\n{question}"),
+        Some(ctx) => format!("{ctx}\n\n{question}"),
         None => question.to_string(),
     };
     let messages = vec![Message::user(&full_question)];
@@ -107,7 +107,7 @@ pub async fn run_quick(
     let _ = output.write_str(&format!("(querying {} models in parallel...)\n\n", models.len()));
 
     let full_question = match context {
-        Some(ctx) => format!("CONTEXT:\n{ctx}\n\nQUESTION:\n{question}"),
+        Some(ctx) => format!("{ctx}\n\n{question}"),
         None => question.to_string(),
     };
     let messages = vec![Message::user(&full_question)];

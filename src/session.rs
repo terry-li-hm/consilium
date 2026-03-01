@@ -379,10 +379,12 @@ impl Output for CompactTeeOutput {
         self.start_time = Instant::now();
         self.spinner_idx = 0;
         self.token_count = 0;
-        self.streaming_phase = false;
+        // streaming_phase is owned by begin_phase — do not reset here
 
         let mut out = io::stdout();
-        write!(out, "  {name}  ⠙ deliberating...")?;
+        if !self.streaming_phase {
+            write!(out, "  {name}  ⠙ deliberating...")?;
+        }
         out.flush()
     }
 
