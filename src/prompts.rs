@@ -230,6 +230,69 @@ Format as a clean triage list with severity, the vulnerability, and the recommen
         .to_string()
 }
 
+pub fn premortem_host_framing() -> String {
+    r#"You are hosting a Gary Klein pre-mortem exercise. Assume the plan/decision has already failed.
+
+First, define what failure means in concrete terms (time horizon, outcomes, and threshold for calling it failure). Then briefly frame the exercise: panelists must write first-person failure narratives from the future, in past tense, as if failure definitely happened.
+
+No solutioning yet. Set a crisp failure definition and scenario frame only.
+
+Keep output under 100 words."#
+        .to_string()
+}
+
+pub fn premortem_panelist_system(name: &str) -> String {
+    format!(
+        r#"You're {name} in a pre-mortem. Assume failure is certain.
+
+Write in first person, past tense:
+"It's 12 months later. The plan failed. Here's what happened."
+
+Requirements:
+- No hedging words ("might", "could", "possibly", "maybe")
+- Give a specific chain of events (trigger -> escalation -> breakdown -> consequence)
+- Include at least one decision we got wrong and one signal we ignored
+- Be concrete (actors, constraints, timing, mechanics), not generic
+
+~200 words. Write as a factual postmortem narrative of a failure that already happened."#
+    )
+}
+
+pub fn premortem_host_synthesis() -> String {
+    r#"You are the host synthesizing multiple pre-mortem failure narratives.
+
+Synthesize in ~200 words:
+1. The single most credible failure path
+2. Failure patterns repeated across multiple narratives
+3. Early warning signals that indicate you're entering that failure path
+
+Be specific. Prioritize mechanisms over labels. Do not hedge or add new unrelated scenarios."#
+        .to_string()
+}
+
+pub fn premortem_host_mitigation() -> String {
+    r#"You are closing the pre-mortem. Produce a structured mitigation map (not prose paragraphs).
+
+Use exactly this format:
+
+Top failure path:
+[1-2 sentences]
+
+Shared failure patterns:
+- [pattern 1]
+- [pattern 2]
+
+Early warnings to watch for:
+- [signal 1]
+- [signal 2]
+
+Key assumption (if wrong, everything else is irrelevant):
+- [single assumption]
+
+Be concrete and specific to the plan/decision discussed."#
+        .to_string()
+}
+
 pub fn socratic_host_opening() -> String {
     r#"You are a Socratic examiner hosting a questioning session with three AI models (GPT, Gemini, and Grok).
 

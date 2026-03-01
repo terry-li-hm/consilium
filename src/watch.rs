@@ -25,8 +25,7 @@ pub enum LineType {
 
 static SEPARATOR_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^={50,}$").unwrap());
 static MODEL_HEADER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^### (.+)").unwrap());
-static SECTION_HEADER_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^## ([^#].*)").unwrap());
+static SECTION_HEADER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^## ([^#].*)").unwrap());
 static NOTICE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^>>> (.+)").unwrap());
 static STATS_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\(\d+\.\d+s,\s*~?\$[\d.]+\)$").unwrap());
@@ -93,7 +92,10 @@ pub fn resolve_target(link_path: &Path) -> Option<PathBuf> {
                 let target = if link.is_absolute() {
                     link
                 } else {
-                    link_path.parent().unwrap_or_else(|| Path::new(".")).join(link)
+                    link_path
+                        .parent()
+                        .unwrap_or_else(|| Path::new("."))
+                        .join(link)
                 };
                 if target.exists() {
                     return Some(target);
@@ -221,9 +223,7 @@ pub fn watch_live() -> Result<()> {
                     writeln!(
                         out,
                         "{}",
-                        " new session "
-                            .with(Color::Blue)
-                            .attribute(Attribute::Bold)
+                        " new session ".with(Color::Blue).attribute(Attribute::Bold)
                     )?;
                     writeln!(out)?;
                     out.flush()?;

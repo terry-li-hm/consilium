@@ -462,10 +462,7 @@ pub async fn run_doctor(client: &reqwest::Client) {
                     println!("{}", "✗ Invalid API key".to_string().with(Color::Red));
                     all_passed = false;
                 } else {
-                    println!(
-                        "{}",
-                        format!("✗ HTTP {}", status).with(Color::Red)
-                    );
+                    println!("{}", format!("✗ HTTP {}", status).with(Color::Red));
                     all_passed = false;
                 }
             }

@@ -363,8 +363,11 @@ pub async fn query_model_streaming(
                             if in_think_block {
                                 if delta_output.contains("</think>") {
                                     in_think_block = false;
-                                    delta_output =
-                                        delta_output.split("</think>").last().unwrap_or("").to_string();
+                                    delta_output = delta_output
+                                        .split("</think>")
+                                        .last()
+                                        .unwrap_or("")
+                                        .to_string();
                                 } else {
                                     continue;
                                 }

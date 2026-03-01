@@ -89,7 +89,9 @@ impl TuiApp {
     }
 
     fn max_scroll(&self) -> usize {
-        self.log_lines.len().saturating_sub(self.viewport_height.max(1))
+        self.log_lines
+            .len()
+            .saturating_sub(self.viewport_height.max(1))
     }
 
     fn push_line(&mut self, line: Line<'static>) {
@@ -152,19 +154,25 @@ impl TuiApp {
                 self.push_line(Line::from(""));
                 self.push_line(Line::from(Span::styled(
                     stripped.trim_start_matches("### ").to_string(),
-                    Style::default().fg(FLEXOKI_YELLOW).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(FLEXOKI_YELLOW)
+                        .add_modifier(Modifier::BOLD),
                 )));
             }
             LineType::SectionHeader => {
                 self.push_line(Line::from(Span::styled(
                     stripped.trim_start_matches("## ").to_string(),
-                    Style::default().fg(FLEXOKI_ORANGE).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(FLEXOKI_ORANGE)
+                        .add_modifier(Modifier::BOLD),
                 )));
             }
             LineType::Notice => {
                 self.push_line(Line::from(Span::styled(
                     stripped.to_string(),
-                    Style::default().fg(FLEXOKI_GREEN).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(FLEXOKI_GREEN)
+                        .add_modifier(Modifier::BOLD),
                 )));
             }
             LineType::Status => {
@@ -181,7 +189,9 @@ impl TuiApp {
                 } else {
                     self.push_line(Line::from(Span::styled(
                         line.to_string(),
-                        Style::default().fg(FLEXOKI_MAGENTA).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(FLEXOKI_MAGENTA)
+                            .add_modifier(Modifier::BOLD),
                     )));
                 }
             }
@@ -266,7 +276,8 @@ impl TuiApp {
         let mut buf = [0_u8; 4096];
         let n = fh.read(&mut buf)?;
         if n > 0 {
-            self.partial_buf.push_str(&String::from_utf8_lossy(&buf[..n]));
+            self.partial_buf
+                .push_str(&String::from_utf8_lossy(&buf[..n]));
             while let Some(pos) = self.partial_buf.find('\n') {
                 let line = self.partial_buf[..pos].to_string();
                 self.partial_buf.drain(..=pos);
@@ -331,7 +342,9 @@ pub fn run_tui() -> Result<()> {
                     Span::styled(" | ", Style::default().fg(FLEXOKI_DIM)),
                     Span::styled(
                         format!("{mins}:{secs:02}"),
-                        Style::default().fg(FLEXOKI_TEXT).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(FLEXOKI_TEXT)
+                            .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(" | ", Style::default().fg(FLEXOKI_DIM)),
                     Span::styled(
@@ -341,8 +354,8 @@ pub fn run_tui() -> Result<()> {
                             .add_modifier(Modifier::BOLD),
                     ),
                 ]);
-                let bar_widget =
-                    Paragraph::new(bar).style(Style::default().bg(FLEXOKI_SURFACE).fg(FLEXOKI_TEXT));
+                let bar_widget = Paragraph::new(bar)
+                    .style(Style::default().bg(FLEXOKI_SURFACE).fg(FLEXOKI_TEXT));
                 f.render_widget(bar_widget, chunks[0]);
 
                 let log_block = Block::default()

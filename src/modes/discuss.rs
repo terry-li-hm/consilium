@@ -124,11 +124,17 @@ pub async fn run_discuss(
         &host_framing,
         framing_t0.elapsed().as_millis() as u64,
     );
-    transcript_parts.push(format!("## {}\n\n### {}\n{}", opening_label, host_name, host_framing));
+    transcript_parts.push(format!(
+        "## {}\n\n### {}\n{}",
+        opening_label, host_name, host_framing
+    ));
     conversation_history.push((host_name.to_string(), host_framing.clone()));
 
     // Panelist opening takes / answers (parallel)
-    let _ = output.write_str(&format!("(querying {} panelists in parallel...)\n", panelists.len()));
+    let _ = output.write_str(&format!(
+        "(querying {} panelists in parallel...)\n",
+        panelists.len()
+    ));
 
     let opening_system = if is_socratic {
         socratic_panelist_system("a panelist", 200)
@@ -175,8 +181,16 @@ pub async fn run_discuss(
     let _ = output.write_str("\n");
 
     // Phase 2: DISCUSSION / PROBING
-    let round_label = if is_socratic { "Probing Round" } else { "Round" };
-    let history_label = if is_socratic { "Examination" } else { "Discussion" };
+    let round_label = if is_socratic {
+        "Probing Round"
+    } else {
+        "Round"
+    };
+    let history_label = if is_socratic {
+        "Examination"
+    } else {
+        "Discussion"
+    };
     let mut round_num = 0;
 
     loop {
@@ -185,7 +199,11 @@ pub async fn run_discuss(
         }
 
         round_num += 1;
-        let _ = output.begin_phase(&format!("{} {}", round_label.to_ascii_uppercase(), round_num));
+        let _ = output.begin_phase(&format!(
+            "{} {}",
+            round_label.to_ascii_uppercase(),
+            round_num
+        ));
 
         let _ = output.write_str(&format!("## {} {}\n\n", round_label, round_num));
         transcript_parts.push(format!("## {} {}", round_label, round_num));
@@ -237,7 +255,9 @@ pub async fn run_discuss(
 
         let steer_messages = vec![
             Message::system(steer_system),
-            Message::user(format!("Topic: {question}\n\n{history_label} so far:\n\n{history_text}")),
+            Message::user(format!(
+                "Topic: {question}\n\n{history_label} so far:\n\n{history_text}"
+            )),
         ];
 
         let host_steer = query_model(
@@ -330,11 +350,8 @@ pub async fn run_discuss(
             .await;
 
             let _ = output.write_str(&format!("{}\n\n", response));
-            let _ = output.end_participant(
-                name,
-                &response,
-                panelist_t0.elapsed().as_millis() as u64,
-            );
+            let _ =
+                output.end_participant(name, &response, panelist_t0.elapsed().as_millis() as u64);
             transcript_parts.push(format!("### {name}\n{response}"));
             conversation_history.push((name.to_string(), response));
         }
@@ -344,18 +361,10 @@ pub async fn run_discuss(
             let round_size = 1 + panelists.len();
             let round_start = opening_len + (round_num - 1) as usize * round_size;
             let round_responses = &conversation_history[round_start..];
-            let _ = output.write_str(&format!(
-                "(compressing round {} context...)\n",
-                round_num
-            ));
-            let summary = compress_round_context(
-                round_responses,
-                question,
-                &client,
-                api_key,
-                &cost_tracker,
-            )
-            .await;
+            let _ = output.write_str(&format!("(compressing round {} context...)\n", round_num));
+            let summary =
+                compress_round_context(round_responses, question, &client, api_key, &cost_tracker)
+                    .await;
             compressed_summaries.push(summary);
         }
     }
@@ -384,10 +393,15 @@ pub async fn run_discuss(
 
     let closing_messages = vec![
         Message::system(closing_prompt),
-        Message::user(format!("Topic: {question}\n\nFull {history_label}:\n\n{history_text}")),
+        Message::user(format!(
+            "Topic: {question}\n\nFull {history_label}:\n\n{history_text}"
+        )),
     ];
 
-    let _ = output.write_str(&format!("(querying {} panelists in parallel...)\n", panelists.len()));
+    let _ = output.write_str(&format!(
+        "(querying {} panelists in parallel...)\n",
+        panelists.len()
+    ));
 
     let closing_results = run_parallel(
         panelists,
@@ -429,7 +443,9 @@ pub async fn run_discuss(
 
     let closing_host_messages = vec![
         Message::system(closing_host_prompt),
-        Message::user(format!("Topic: {question}\n\nFull {history_label}:\n\n{history_text}")),
+        Message::user(format!(
+            "Topic: {question}\n\nFull {history_label}:\n\n{history_text}"
+        )),
     ];
 
     if is_socratic {

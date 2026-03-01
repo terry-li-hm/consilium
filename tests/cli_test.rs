@@ -4,7 +4,7 @@ use std::process::Command;
 
 #[test]
 fn test_version() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("consilium")?;
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("consilium"));
     cmd.arg("--version-flag");
     cmd.assert()
         .success()
@@ -14,7 +14,7 @@ fn test_version() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_no_args_error() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("consilium")?;
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("consilium"));
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("Error: question is required"));
@@ -23,7 +23,7 @@ fn test_no_args_error() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_help_includes_examples() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("consilium")?;
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("consilium"));
     cmd.arg("--help");
     cmd.assert()
         .success()

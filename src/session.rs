@@ -429,6 +429,7 @@ fn mode_title(mode: &str) -> &'static str {
         "quick" => "Quick Council",
         "discuss" => "Roundtable Discussion",
         "redteam" => "Red Team",
+        "premortem" => "Pre-mortem",
         "socratic" => "Socratic Examination",
         "oxford" => "Oxford Debate",
         "solo" => "Solo Council",

@@ -104,7 +104,10 @@ pub async fn run_quick(
     let start = Instant::now();
     let cost_tracker = CostTracker::new();
 
-    let _ = output.write_str(&format!("(querying {} models in parallel...)\n\n", models.len()));
+    let _ = output.write_str(&format!(
+        "(querying {} models in parallel...)\n\n",
+        models.len()
+    ));
 
     let full_question = match context {
         Some(ctx) => format!("{ctx}\n\n{question}"),
@@ -115,7 +118,7 @@ pub async fn run_quick(
     // For quick mode, if we are not quiet (meaning we have a real output), we do streaming.
     // If we are quiet, main.rs would have passed a dummy or we wouldn't be here.
     // But actually we should check if it's prose format or not.
-    
+
     let results = if format == "prose" {
         run_quick_streaming(
             question,

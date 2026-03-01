@@ -25,27 +25,25 @@ static ARRAY_RE: LazyLock<Regex> =
 static BULLET_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*(?:[-*]|\d+[.)])\s*").expect("valid regex"));
 
-static RE_RECOMMENDATION: LazyLock<Regex> =
-    LazyLock::new(|| {
-        Regex::new(r"(?s)## Recommendation[^\n]*\n(.*?)(?:\n## |\z)").expect("valid regex")
-    });
+static RE_RECOMMENDATION: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?s)## Recommendation[^\n]*\n(.*?)(?:\n## |\z)").expect("valid regex")
+});
 static RE_DO_NOW: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?s)### Do Now[^\n]*\n(.*?)(?:\n### |\z)").expect("valid regex"));
 static RE_DO_NOW_BOLD: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\*\*\d+\.\s*(.+?)\*\*").expect("valid regex"));
-static RE_CONSIDER: LazyLock<Regex> =
-    LazyLock::new(|| {
-        Regex::new(r"(?s)### Consider Later[^\n]*\n(.*?)(?:\n### |\z)").expect("valid regex")
-    });
-static RE_SKIP: LazyLock<Regex> =
-    LazyLock::new(|| {
-        Regex::new(r"(?s)### Skip[^\n]*\n(.*?)(?:\n### |\n---|\z)").expect("valid regex")
-    });
+static RE_CONSIDER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?s)### Consider Later[^\n]*\n(.*?)(?:\n### |\z)").expect("valid regex")
+});
+static RE_SKIP: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?s)### Skip[^\n]*\n(.*?)(?:\n### |\n---|\z)").expect("valid regex")
+});
 static RE_BULLET_BOLD: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^[-*]\s+\*\*(.+?)\*\*").expect("valid regex"));
 
-static RE_SYNTHESIS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)## Synthesis[^\n]*\n(.*?)(?:\n## |\z)").expect("valid regex"));
+static RE_SYNTHESIS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?s)## Synthesis[^\n]*\n(.*?)(?:\n## |\z)").expect("valid regex")
+});
 
 #[derive(Debug, Clone, Default)]
 struct RecommendationItems {
@@ -595,7 +593,8 @@ pub async fn run_followup_discussion(
         .await;
 
         let _ = output.write_str(&format!("{response}\n\n"));
-        let _ = output.end_participant(name, &response, participant_t0.elapsed().as_millis() as u64);
+        let _ =
+            output.end_participant(name, &response, participant_t0.elapsed().as_millis() as u64);
 
         transcript_parts.push(format!("### {model_name}\n{response}\n"));
     }
@@ -843,7 +842,11 @@ pub async fn run_council(
 
             if !thorough && !compressed_summaries.is_empty() {
                 for (i, summary) in compressed_summaries.iter().enumerate() {
-                    messages.push(Message::user(format!("Summary of Round {}:\n{}", i + 1, summary)));
+                    messages.push(Message::user(format!(
+                        "Summary of Round {}:\n{}",
+                        i + 1,
+                        summary
+                    )));
                 }
 
                 let current_round_start_idx = round_num * council_config.len();
@@ -936,7 +939,9 @@ pub async fn run_council(
             let (converged, reason) =
                 detect_consensus(&conversation, council_config, Some(current_challenger));
             if converged {
-                let _ = output.write_str(&format!(">>> CONSENSUS DETECTED ({reason}) - proceeding to judge\n\n"));
+                let _ = output.write_str(&format!(
+                    ">>> CONSENSUS DETECTED ({reason}) - proceeding to judge\n\n"
+                ));
                 break;
             }
         }
@@ -944,15 +949,13 @@ pub async fn run_council(
         if !thorough && rounds > 1 && round_num < rounds - 1 {
             let round_start = round_num * council_config.len();
             let round_responses = &conversation[round_start..];
-            let _ = output.write_str(&format!("(compressing round {} context...)\n", round_num + 1));
-            let summary = compress_round_context(
-                round_responses,
-                question,
-                &client,
-                api_key,
-                &cost_tracker,
-            )
-            .await;
+            let _ = output.write_str(&format!(
+                "(compressing round {} context...)\n",
+                round_num + 1
+            ));
+            let summary =
+                compress_round_context(round_responses, question, &client, api_key, &cost_tracker)
+                    .await;
             compressed_summaries.push(summary);
         }
     }
@@ -1122,7 +1125,10 @@ pub async fn run_council(
                 )),
             ];
 
-            let critique_name = CRITIQUE_MODEL.split('/').next_back().unwrap_or(CRITIQUE_MODEL);
+            let critique_name = CRITIQUE_MODEL
+                .split('/')
+                .next_back()
+                .unwrap_or(CRITIQUE_MODEL);
             let critique_t0 = Instant::now();
             let _ = output.begin_phase("JUDGMENT");
             let _ = output.begin_participant(&format!("Critique ({critique_name})"));
@@ -1292,7 +1298,10 @@ pub async fn run_council(
             .collect::<std::collections::HashSet<_>>()
             .len();
         let working_count = council_config.len().saturating_sub(unique_failed);
-        let _ = output.write_str(&format!("\nCouncil ran with {working_count}/{} models\n", council_config.len()));
+        let _ = output.write_str(&format!(
+            "\nCouncil ran with {working_count}/{} models\n",
+            council_config.len()
+        ));
         let _ = output.write_str(&"=".repeat(60));
         let _ = output.write_str("\n\n");
     }

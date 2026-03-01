@@ -1,6 +1,7 @@
 pub mod council;
 pub mod discuss;
 pub mod oxford;
+pub mod premortem;
 pub mod quick;
 pub mod redteam;
 

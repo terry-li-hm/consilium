@@ -64,7 +64,10 @@ pub async fn run_redteam(
 
     // Phase 2: ATTACKS (parallel)
     let _ = output.begin_phase("ATTACKS");
-    let _ = output.write_str(&format!("## Attacks\n(querying {} attackers in parallel...)\n", panelists.len()));
+    let _ = output.write_str(&format!(
+        "## Attacks\n(querying {} attackers in parallel...)\n",
+        panelists.len()
+    ));
     let mut attack_messages_list = Vec::with_capacity(panelists.len());
     for (name, _, _) in panelists {
         let attacker_system =
@@ -191,11 +194,7 @@ pub async fn run_redteam(
         .await;
 
         let _ = output.write_str(&format!("{}\n\n", response));
-        let _ = output.end_participant(
-            name,
-            &response,
-            attacker_t0.elapsed().as_millis() as u64,
-        );
+        let _ = output.end_participant(name, &response, attacker_t0.elapsed().as_millis() as u64);
         transcript_parts.push(format!("### {name}\n{response}"));
         conversation_history.push((name.to_string(), response));
     }

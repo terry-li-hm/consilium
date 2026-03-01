@@ -58,11 +58,8 @@ pub async fn run_oxford(
         .await;
         let m = m.trim().trim_matches('"').to_string();
         let _ = output.write_str(&format!("{}\n\n", m));
-        let _ = output.end_participant(
-            "Judge (Claude)",
-            &m,
-            motion_t0.elapsed().as_millis() as u64,
-        );
+        let _ =
+            output.end_participant("Judge (Claude)", &m, motion_t0.elapsed().as_millis() as u64);
         m
     };
     transcript_parts.push(format!("## Motion\n\n{motion}"));
@@ -77,7 +74,9 @@ pub async fn run_oxford(
 
     let _ = output.write_str(&format!("Proposition (FOR): {prop_name}\n"));
     let _ = output.write_str(&format!("Opposition (AGAINST): {opp_name}\n\n"));
-    transcript_parts.push(format!("**Proposition:** {prop_name} | **Opposition:** {opp_name}"));
+    transcript_parts.push(format!(
+        "**Proposition:** {prop_name} | **Opposition:** {opp_name}"
+    ));
 
     // Phase 2: PRIOR
     let _ = output.begin_phase("PRIOR");
@@ -146,9 +145,7 @@ pub async fn run_oxford(
     transcript_parts.push(format!(
         "## Constructive Speeches\n\n### {prop_name} (Proposition)\n{prop_constructive}"
     ));
-    transcript_parts.push(format!(
-        "### {opp_name} (Opposition)\n{opp_constructive}"
-    ));
+    transcript_parts.push(format!("### {opp_name} (Opposition)\n{opp_constructive}"));
 
     // Phase 4: REBUTTAL (parallel)
     let _ = output.begin_phase("REBUTTALS");
