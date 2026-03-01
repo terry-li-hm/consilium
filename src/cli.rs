@@ -7,7 +7,7 @@ use clap::Parser;
     name = "consilium",
     about = "Multi-model deliberation CLI",
     version,
-    after_help = "Examples:\n  consilium \"Should I take this job offer?\"\n  consilium \"What could go wrong with our launch plan?\" --redteam\n  consilium \"Is Rust better than Go for CLIs?\" --oxford\n  consilium \"What's the best database for this use case?\" --quick"
+    after_help = "Examples:\n  consilium \"Should I take this job offer?\"\n  consilium \"What could go wrong with our launch plan?\" --redteam\n  consilium \"Is Rust better than Go for CLIs?\" --oxford\n  consilium \"What is the best database for this use case?\" --quick"
 )]
 pub struct Cli {
     /// The question or topic to deliberate on
@@ -15,35 +15,31 @@ pub struct Cli {
 
     // --- Mode flags (mutually exclusive by convention, validated in main) ---
     /// Quick parallel query (all models answer independently)
-    #[arg(long)]
+    #[arg(long, help_heading = "Core Modes")]
     pub quick: bool,
 
     /// Full council deliberation (blind → debate → judge)
-    #[arg(long)]
+    #[arg(long, help_heading = "Core Modes")]
     pub council: bool,
 
     /// Roundtable discussion (hosted exploration)
-    #[arg(long)]
+    #[arg(long, help_heading = "Workflow Presets")]
     pub discuss: bool,
 
     /// Adversarial red team stress test
-    #[arg(long)]
+    #[arg(long, help_heading = "Core Modes")]
     pub redteam: bool,
 
     /// Socratic probing (examiner mode)
-    #[arg(long)]
+    #[arg(long, help_heading = "Core Modes")]
     pub socratic: bool,
 
     /// Oxford-style binary debate
-    #[arg(long)]
+    #[arg(long, help_heading = "Workflow Presets")]
     pub oxford: bool,
 
-    /// Solo council (one model, multiple perspectives)
-    #[arg(long)]
-    pub solo: bool,
-
     /// Deep mode (decompose + 2 rounds, falls through to council)
-    #[arg(long)]
+    #[arg(long, help_heading = "Workflow Presets")]
     pub deep: bool,
 
     // --- Content flags ---
@@ -62,10 +58,6 @@ pub struct Cli {
     /// Explicit challenger model name (council mode)
     #[arg(long)]
     pub challenger: Option<String>,
-
-    /// Comma-separated roles for solo mode (default: Advocate,Skeptic,Pragmatist)
-    #[arg(long)]
-    pub roles: Option<String>,
 
     /// Number of debate/discussion rounds
     #[arg(long, default_value = "1")]
@@ -134,10 +126,6 @@ pub struct Cli {
     #[arg(long)]
     pub search: Option<String>,
 
-    /// List available roles for solo mode
-    #[arg(long)]
-    pub list_roles: bool,
-
     /// Print version
     #[arg(long)]
     pub version_flag: bool,
@@ -166,8 +154,6 @@ impl Cli {
             Some("socratic")
         } else if self.oxford {
             Some("oxford")
-        } else if self.solo {
-            Some("solo")
         } else if self.deep {
             Some("council") // deep falls through to council
         } else {
@@ -183,7 +169,6 @@ impl Cli {
             || self.tui
             || self.view.is_some()
             || self.search.is_some()
-            || self.list_roles
             || self.version_flag
             || self.doctor
     }

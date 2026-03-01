@@ -3,9 +3,9 @@ use consilium::admin;
 use consilium::api::classify_mode;
 use consilium::cli::Cli;
 use consilium::config::{
-    discuss_models, oxford_models, quick_models, redteam_models, CostTracker, COUNCIL, JUDGE_MODEL,
+    discuss_models, oxford_models, quick_models, redteam_models, CostTracker, COUNCIL,
 };
-use consilium::modes::{council, discuss, oxford, quick, redteam, solo};
+use consilium::modes::{council, discuss, oxford, quick, redteam};
 use consilium::session::{finish_session, setup_live_output};
 use std::io::IsTerminal;
 
@@ -40,11 +40,6 @@ async fn main() {
 
     if let Some(term) = args.search.as_deref() {
         admin::search_sessions(term);
-        std::process::exit(0);
-    }
-
-    if args.list_roles {
-        admin::list_roles();
         std::process::exit(0);
     }
 
@@ -157,19 +152,6 @@ async fn main() {
                 args.timeout,
                 &mut *output,
                 args.thorough,
-            )
-            .await
-        }
-        "solo" => {
-            solo::run_solo(
-                &question,
-                JUDGE_MODEL,
-                &api_key,
-                google_api_key.as_deref(),
-                args.roles.clone(),
-                &args.format,
-                args.timeout,
-                &mut *output,
             )
             .await
         }

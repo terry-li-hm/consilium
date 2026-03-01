@@ -8,19 +8,7 @@ fn test_version() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("--version-flag");
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("consilium 0.3.0"));
-    Ok(())
-}
-
-#[test]
-fn test_list_roles() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("consilium")?;
-    cmd.arg("--list-roles");
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Advocate"))
-        .stdout(predicate::str::contains("Skeptic"))
-        .stdout(predicate::str::contains("Pragmatist"));
+        .stdout(predicate::str::contains("consilium 0.4.0"));
     Ok(())
 }
 

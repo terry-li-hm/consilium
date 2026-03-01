@@ -1,5 +1,4 @@
 use crate::config::OPENROUTER_URL;
-use crate::prompts;
 use crate::session::get_sessions_dir;
 use chrono::{DateTime, Local};
 use crossterm::style::{Color, Stylize};
@@ -8,25 +7,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::process::Command;
-
-pub fn list_roles() {
-    println!("Available predefined roles for --solo --roles:\n");
-    let roles = prompts::role_library();
-    let mut keys: Vec<_> = roles.keys().collect();
-    keys.sort();
-
-    for name in keys {
-        let desc = roles.get(name).unwrap();
-        let short = if desc.len() > 80 {
-            format!("{}...", &desc[..77])
-        } else {
-            desc.to_string()
-        };
-        println!("  {:<20} {}", name, short.replace('\n', " "));
-    }
-    println!("\nDefault: Advocate, Skeptic, Pragmatist");
-    println!("Unknown roles use a generic prompt. Any name works.");
-}
 
 pub fn list_sessions() {
     let sessions_dir = get_sessions_dir();
