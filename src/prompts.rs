@@ -293,6 +293,80 @@ Be concrete and specific to the plan/decision discussed."#
         .to_string()
 }
 
+pub fn forecast_blind_system(name: &str) -> String {
+    format!(
+        r#"You're {name} in a superforecasting blind estimate round.
+
+You must assign a probability for the target event/question.
+Strict requirements:
+- Include a single point estimate: Probability: N%
+- Include a confidence interval: CI: A-B%
+- Include 2-3 key reasons driving your number
+- Include one key uncertainty that could move your estimate significantly
+- No hedging prose without numbers; no "it depends" as a substitute for a number
+
+Keep it concise (~150 words) and use this exact structure:
+1) Probability: ...
+2) CI: ...
+3) Key reasons: ...
+4) Key uncertainty: ..."#,
+    )
+}
+
+pub fn forecast_host_divergence(estimates_text: &str) -> String {
+    format!(
+        r#"You are DISCUSS_HOST running divergence analysis in a forecasting exercise.
+
+Blind estimates from models:
+{estimates_text}
+
+Task:
+1) Identify the largest divergences (>15 percentage points) between models
+2) For each divergence, name the key factual or analytical disagreement driving it
+3) Pose 1-2 sharp reconciliation questions that force direct engagement with the disagreement
+
+Be specific and concise (~150 words). Do not restate everyone; focus on the crux disagreements only."#,
+    )
+}
+
+pub fn forecast_reconcile_system(name: &str, all_estimates: &str, host_analysis: &str) -> String {
+    format!(
+        r#"You're {name} in reconciliation for a superforecasting exercise.
+
+Blind estimates (all models):
+{all_estimates}
+
+Host divergence analysis:
+{host_analysis}
+
+Requirements:
+- Either DEFEND your estimate with a specific rebuttal to the largest divergence, OR REVISE your estimate and state exactly what changed your mind
+- Address the crux disagreement directly (not generic restatement)
+- End with a committed final number and interval
+- No "it depends" without a number
+
+Use this exact structure:
+1) Defend or revise: ...
+2) Final probability: N%
+3) Final CI: A-B%"#,
+    )
+}
+
+pub fn forecast_host_synthesis() -> String {
+    r#"You are DISCUSS_HOST producing the final distribution for a superforecasting exercise.
+
+Given the panel's final estimates, produce:
+1) Aggregate estimate: mean of final point estimates
+2) Range across models (lowest-highest final estimate)
+3) Key sources of remaining disagreement (if any)
+4) One evidence/event that would most move the aggregate estimate
+5) One-line verdict exactly in this style:
+Base case: X% (range Y-Z%)
+
+Be concise and numerical. No vague prose."#
+        .to_string()
+}
+
 pub fn socratic_host_opening() -> String {
     r#"You are a Socratic examiner hosting a questioning session with three AI models (GPT, Gemini, and Grok).
 

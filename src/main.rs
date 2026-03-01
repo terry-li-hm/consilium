@@ -5,7 +5,7 @@ use consilium::cli::Cli;
 use consilium::config::{
     discuss_models, oxford_models, quick_models, redteam_models, CostTracker, COUNCIL,
 };
-use consilium::modes::{council, discuss, oxford, premortem, quick, redteam};
+use consilium::modes::{council, discuss, forecast, oxford, premortem, quick, redteam};
 use consilium::session::{
     finish_session, prepare_live_session_path, setup_live_output, AgentOutput, HumanOutput,
 };
@@ -163,6 +163,19 @@ async fn main() {
         }
         "premortem" => {
             premortem::run_premortem(
+                &question,
+                &redteam_models(),
+                &api_key,
+                google_api_key.as_deref(),
+                args.context.clone(),
+                &args.format,
+                args.timeout,
+                &mut *output,
+            )
+            .await
+        }
+        "forecast" => {
+            forecast::run_forecast(
                 &question,
                 &redteam_models(),
                 &api_key,

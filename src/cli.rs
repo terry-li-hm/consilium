@@ -34,6 +34,10 @@ pub struct Cli {
     #[arg(long, help_heading = "Core Modes")]
     pub premortem: bool,
 
+    /// Superforecasting: probability estimates + reconciliation
+    #[arg(long, help_heading = "Core Modes")]
+    pub forecast: bool,
+
     /// Socratic probing (examiner mode)
     #[arg(long, help_heading = "Core Modes")]
     pub socratic: bool,
@@ -160,6 +164,8 @@ impl Cli {
             Some("redteam")
         } else if self.premortem {
             Some("premortem")
+        } else if self.forecast {
+            Some("forecast")
         } else if self.socratic {
             Some("socratic")
         } else if self.oxford {

@@ -430,6 +430,7 @@ fn mode_title(mode: &str) -> &'static str {
         "discuss" => "Roundtable Discussion",
         "redteam" => "Red Team",
         "premortem" => "Pre-mortem",
+        "forecast" => "Forecast",
         "socratic" => "Socratic Examination",
         "oxford" => "Oxford Debate",
         "solo" => "Solo Council",
@@ -490,11 +491,7 @@ pub fn save_to_vault(question: &str, transcript: &str, mode: &str, quiet: bool) 
     let now = Local::now();
     let title = mode_title(mode);
     let title_slug = title_slugify(question, 40);
-    let filename = format!(
-        "Consilium - {} - {}.md",
-        title_slug,
-        now.format("%Y-%m-%d")
-    );
+    let filename = format!("Consilium - {} - {}.md", title_slug, now.format("%Y-%m-%d"));
     let path = vault_dir.join(filename);
 
     let question_title = if question.chars().count() > 80 {
