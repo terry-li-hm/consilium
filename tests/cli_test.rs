@@ -45,3 +45,25 @@ fn test_help_includes_examples() -> Result<(), Box<dyn std::error::Error>> {
         ));
     Ok(())
 }
+
+#[test]
+fn test_help_includes_cc_flag() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::cargo_bin("consilium")?;
+    cmd.arg("--help");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("--cc"))
+        .stdout(predicate::str::contains("Claude Code-friendly mode"));
+    Ok(())
+}
+
+#[test]
+fn test_cc_flag_no_question_error() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::cargo_bin("consilium")?;
+    cmd.arg("--cc");
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("Error: question is required"))
+        .stderr(predicate::str::contains("unexpected argument").not());
+    Ok(())
+}
