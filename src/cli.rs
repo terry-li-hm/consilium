@@ -98,6 +98,10 @@ pub struct Cli {
     #[arg(long, help_heading = "Output")]
     pub no_save: bool,
 
+    /// Save session to Obsidian vault (~/notes/Councils/)
+    #[arg(long, help_heading = "Output")]
+    pub vault: bool,
+
     /// Quiet mode (minimal output)
     #[arg(short, long, help_heading = "Output")]
     pub quiet: bool,

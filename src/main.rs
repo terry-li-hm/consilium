@@ -252,6 +252,7 @@ async fn main() {
         &mode,
         "",
         args.no_save,
+        args.vault || args.deep || mode == "premortem" || mode == "deep",
         args.output.as_deref(),
         args.share,
         effective_quiet,

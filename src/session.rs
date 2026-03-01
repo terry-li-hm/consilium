@@ -461,6 +461,73 @@ pub fn slugify(text: &str, max_len: usize) -> String {
     slug
 }
 
+pub fn title_slugify(text: &str, max_len: usize) -> String {
+    let slug = slugify(text, max_len);
+
+    slug.split('-')
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            if let Some(first) = chars.next() {
+                let rest: String = chars.collect();
+                format!("{}{}", first.to_uppercase(), rest)
+            } else {
+                String::new()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+pub fn save_to_vault(question: &str, transcript: &str, mode: &str, quiet: bool) -> Option<PathBuf> {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let vault_dir = home.join("notes").join("Councils");
+    if let Err(e) = fs::create_dir_all(&vault_dir) {
+        eprintln!("Failed to create vault directory: {e}");
+        return None;
+    }
+
+    let now = Local::now();
+    let title = mode_title(mode);
+    let title_slug = title_slugify(question, 40);
+    let filename = format!(
+        "Consilium - {} - {}.md",
+        title_slug,
+        now.format("%Y-%m-%d")
+    );
+    let path = vault_dir.join(filename);
+
+    let question_title = if question.chars().count() > 80 {
+        question.chars().take(80).collect::<String>()
+    } else {
+        question.to_string()
+    };
+
+    let content = format!(
+        "---\n\
+tags: [consilium, {mode}]\n\
+date: {}\n\
+mode: {mode}\n\
+---\n\n\
+# {title}: {question_title}\n\n\
+{transcript}\n",
+        now.format("%Y-%m-%d")
+    );
+
+    match fs::write(&path, content) {
+        Ok(_) => {
+            if !quiet {
+                println!("Vault saved to: {}", path.display());
+            }
+            Some(path)
+        }
+        Err(e) => {
+            eprintln!("Failed to save vault session: {e}");
+            None
+        }
+    }
+}
+
 pub fn save_session(
     question: &str,
     transcript: &str,
@@ -655,6 +722,7 @@ pub fn finish_session(
     mode: &str,
     header_extra: &str,
     no_save: bool,
+    vault: bool,
     output: Option<&str>,
     share: bool,
     quiet: bool,
@@ -669,6 +737,10 @@ pub fn finish_session(
         output,
         quiet,
     );
+
+    if vault && !no_save {
+        let _ = save_to_vault(question, &result.transcript, mode, quiet);
+    }
 
     let gist_url = if share {
         share_gist(question, &result.transcript, mode, quiet)
