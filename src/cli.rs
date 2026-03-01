@@ -42,100 +42,96 @@ pub struct Cli {
     #[arg(long, help_heading = "Workflow Presets")]
     pub deep: bool,
 
-    // --- Content flags ---
     /// Additional context to include with the question
-    #[arg(long)]
+    #[arg(long, help_heading = "Context")]
     pub context: Option<String>,
 
     /// Persona for the council (e.g., "startup founder")
-    #[arg(long)]
+    #[arg(long, help_heading = "Context")]
     pub persona: Option<String>,
 
     /// Domain context (banking, healthcare, eu, fintech, bio)
-    #[arg(long)]
+    #[arg(long, help_heading = "Context")]
     pub domain: Option<String>,
 
     /// Explicit challenger model name (council mode)
-    #[arg(long)]
+    #[arg(long, help_heading = "Deliberation")]
     pub challenger: Option<String>,
 
     /// Number of debate/discussion rounds
-    #[arg(long, default_value = "1")]
+    #[arg(long, default_value = "1", help_heading = "Deliberation")]
     pub rounds: usize,
 
-    // --- Session management ---
-    /// Output file path (overrides auto-save)
-    #[arg(short, long)]
-    pub output: Option<String>,
-
-    /// Share session as secret GitHub gist
-    #[arg(long)]
-    pub share: bool,
-
-    /// Don't auto-save session
-    #[arg(long)]
-    pub no_save: bool,
-
-    /// Quiet mode (minimal output)
-    #[arg(short, long)]
-    pub quiet: bool,
-
-    /// API timeout in seconds
-    #[arg(long, default_value = "300")]
-    pub timeout: f64,
-
-    // --- Transformations ---
     /// Decompose into sub-questions before deliberation
-    #[arg(long)]
+    #[arg(long, help_heading = "Deliberation")]
     pub decompose: bool,
 
     /// Enable cross-pollination phase (council mode)
-    #[arg(long)]
+    #[arg(long, help_heading = "Deliberation")]
     pub xpol: bool,
 
     /// Enable followup discussion after judge synthesis
-    #[arg(long)]
+    #[arg(long, help_heading = "Deliberation")]
     pub followup: bool,
 
+    /// Skip early consensus exit and context compression (full deliberation)
+    #[arg(long, help_heading = "Deliberation")]
+    pub thorough: bool,
+
+    /// Output file path (overrides auto-save)
+    #[arg(short, long, help_heading = "Output")]
+    pub output: Option<String>,
+
     /// Output format: prose, json, yaml
-    #[arg(long, default_value = "prose")]
+    #[arg(long, default_value = "prose", help_heading = "Output")]
     pub format: String,
 
-    // --- Admin commands ---
+    /// Share session as secret GitHub gist
+    #[arg(long, help_heading = "Output")]
+    pub share: bool,
+
+    /// Don't auto-save session
+    #[arg(long, help_heading = "Output")]
+    pub no_save: bool,
+
+    /// Quiet mode (minimal output)
+    #[arg(short, long, help_heading = "Output")]
+    pub quiet: bool,
+
+    /// API timeout in seconds
+    #[arg(long, default_value = "300", help_heading = "Output")]
+    pub timeout: f64,
+
     /// Show session statistics
-    #[arg(long)]
+    #[arg(long, help_heading = "Admin")]
     pub stats: bool,
 
     /// List recent sessions
-    #[arg(long)]
+    #[arg(long, help_heading = "Admin")]
     pub sessions: bool,
 
     /// Watch live session output
-    #[arg(long)]
+    #[arg(long, help_heading = "Admin")]
     pub watch: bool,
 
     /// TUI for live session viewing
-    #[arg(long)]
+    #[arg(long, help_heading = "Admin")]
     pub tui: bool,
 
     /// View a session by name or search term
-    #[arg(long)]
+    #[arg(long, help_heading = "Admin")]
     pub view: Option<String>,
 
     /// Search sessions by content
-    #[arg(long)]
+    #[arg(long, help_heading = "Admin")]
     pub search: Option<String>,
 
     /// Print version
-    #[arg(long)]
+    #[arg(long, help_heading = "Admin")]
     pub version_flag: bool,
 
-    /// Skip early consensus exit and context compression (full deliberation)
-    #[arg(long)]
-    pub thorough: bool,
-
     /// Run diagnostics (check API keys, connectivity, session directory)
-    #[arg(long)]
+    #[arg(long, help_heading = "Admin")]
     pub doctor: bool,
 }
 
