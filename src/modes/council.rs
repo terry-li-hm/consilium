@@ -1077,8 +1077,8 @@ pub async fn run_council(
 
         let judge_name = JUDGE_MODEL.split('/').next_back().unwrap_or(JUDGE_MODEL);
         let judge_t0 = Instant::now();
-        let _ = output.begin_participant(&format!("Judge ({judge_name})"));
         let _ = output.begin_phase("JUDGMENT");
+        let _ = output.begin_participant(&format!("Judge ({judge_name})"));
         let _ = output.write_str(&format!("### Judge ({judge_name})\n"));
 
         let mut judge_response = query_model(
@@ -1119,8 +1119,8 @@ pub async fn run_council(
 
             let critique_name = CRITIQUE_MODEL.split('/').next_back().unwrap_or(CRITIQUE_MODEL);
             let critique_t0 = Instant::now();
-            let _ = output.begin_participant(&format!("Critique ({critique_name})"));
             let _ = output.begin_phase("JUDGMENT");
+            let _ = output.begin_participant(&format!("Critique ({critique_name})"));
             let _ = output.write_str(&format!("### Critique ({critique_name})\n"));
 
             let critique_response = query_model(
@@ -1151,8 +1151,8 @@ pub async fn run_council(
                 output_parts.push("*(Critique unavailable — synthesis is unreviewed)*".to_string());
             } else {
                 let final_t0 = Instant::now();
-                let _ = output.begin_participant(&format!("Final Synthesis ({judge_name})"));
                 let _ = output.begin_phase("JUDGMENT");
+                let _ = output.begin_participant(&format!("Final Synthesis ({judge_name})"));
                 let _ = output.write_str(&format!("### Final Synthesis ({judge_name})\n"));
 
                 let mut revision_messages = judge_messages.clone();

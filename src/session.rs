@@ -392,6 +392,12 @@ impl Output for CompactTeeOutput {
         full_response: &str,
         elapsed_ms: u64,
     ) -> io::Result<()> {
+        // Streaming phases (judgment) already show full output — skip summary card
+        if self.streaming_phase {
+            self.buffer.clear();
+            return Ok(());
+        }
+
         self.clear_spinner_line()?;
 
         let summary = extract_summary(full_response);
