@@ -98,10 +98,6 @@ pub struct Cli {
     #[arg(short, long, help_heading = "Output")]
     pub quiet: bool,
 
-    /// Plain mode: full token output with no spinners or summaries (for non-TTY capture)
-    #[arg(long, help_heading = "Output")]
-    pub plain: bool,
-
     /// Stream raw tokens instead of compact participant summaries
     #[arg(long, default_value_t = false, help_heading = "Output")]
     pub stream: bool,

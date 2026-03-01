@@ -10,6 +10,17 @@ use consilium::session::{
     finish_session, prepare_live_session_path, setup_live_output, CompactTeeOutput, StdoutOutput,
 };
 use std::io::IsTerminal;
+use std::os::unix::io::AsRawFd;
+
+/// Returns true when stdout is redirected to a regular file (background capture).
+/// Distinguishes file redirect (wants full output) from pipe (scripting, compact fine).
+fn stdout_is_file_redirect() -> bool {
+    let fd = std::io::stdout().as_raw_fd();
+    unsafe {
+        let mut stat: libc::stat = std::mem::zeroed();
+        libc::fstat(fd, &mut stat) == 0 && (stat.st_mode & libc::S_IFMT) == libc::S_IFREG
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -100,10 +111,11 @@ async fn main() {
     };
 
     let color = std::env::var("NO_COLOR").is_err() && std::io::stdout().is_terminal();
-    let mut output: Box<dyn consilium::session::Output> = if args.plain {
-        Box::new(StdoutOutput::new(false))
-    } else if args.stream || args.quiet {
+    let mut output: Box<dyn consilium::session::Output> = if args.stream || args.quiet {
         setup_live_output(effective_quiet, color)
+    } else if stdout_is_file_redirect() {
+        // Stdout redirected to a file (e.g. background capture) — write full token stream
+        Box::new(StdoutOutput::new(false))
     } else {
         let session_file_path = prepare_live_session_path();
         Box::new(CompactTeeOutput::new(&session_file_path, color))
