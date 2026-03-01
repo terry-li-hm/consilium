@@ -44,12 +44,12 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 | `config.rs` | 812 | Constants, types, CostTracker, utility functions, 58 tests |
 | `api.rs` | 753 | HTTP clients, SSE streaming, parallel queries, retry, fallback |
 | `prompts.rs` | 582 | All prompt templates (verbatim port from Python) |
-| `session.rs` | 805 | Output trait + CompactTeeOutput, LiveWriter, session save/share/history |
-| `modes/council.rs` | 1310 | Full council deliberation |
-| `modes/discuss.rs` | 478 | Roundtable + socratic |
-| `modes/oxford.rs` | 307 | Oxford debate |
+| `session.rs` | 810 | Output trait + CompactTeeOutput, LiveWriter, session save/share/history |
+| `modes/council.rs` | 1315 | Full council deliberation |
+| `modes/discuss.rs` | 476 | Roundtable + socratic |
+| `modes/oxford.rs` | 304 | Oxford debate |
 | `modes/quick.rs` | 241 | Parallel streaming |
-| `modes/redteam.rs` | 256 | Adversarial stress-test |
+| `modes/redteam.rs` | 255 | Adversarial stress-test |
 | `admin.rs` | 488 | Stats, sessions, view, search |
 | `tui.rs` | 420 | Ratatui TUI (Flexoki dark) |
 | `watch.rs` | 275 | Crossterm live watcher |
@@ -77,6 +77,10 @@ Key test categories:
 4. `cargo build --release`
 5. Commit, push, `cargo publish`
 6. Site: if landing page needs update, edit `consilium-site/public/index.html`, push (Vercel auto-deploys)
+
+## Maintenance
+
+After any session that modifies source files: run `wc -l src/**/*.rs src/modes/*.rs` and update the module map line counts above. Takes 30 seconds; keeps the map accurate for future delegates.
 
 ## Delegation notes
 
