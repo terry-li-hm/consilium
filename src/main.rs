@@ -7,7 +7,7 @@ use consilium::config::{
 };
 use consilium::modes::{council, discuss, oxford, quick, redteam};
 use consilium::session::{
-    finish_session, prepare_live_session_path, setup_live_output, CompactTeeOutput,
+    finish_session, prepare_live_session_path, setup_live_output, CompactTeeOutput, StdoutOutput,
 };
 use std::io::IsTerminal;
 
@@ -100,7 +100,9 @@ async fn main() {
     };
 
     let color = std::env::var("NO_COLOR").is_err() && std::io::stdout().is_terminal();
-    let mut output: Box<dyn consilium::session::Output> = if args.stream || args.quiet {
+    let mut output: Box<dyn consilium::session::Output> = if args.plain {
+        Box::new(StdoutOutput::new(false))
+    } else if args.stream || args.quiet {
         setup_live_output(effective_quiet, color)
     } else {
         let session_file_path = prepare_live_session_path();
