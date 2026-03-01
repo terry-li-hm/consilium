@@ -10,6 +10,7 @@ use std::time::Instant;
 
 async fn run_quick_streaming(
     question: &str,
+    context: Option<&str>,
     models: &[ModelEntry],
     api_key: &str,
     google_api_key: Option<&str>,
@@ -19,7 +20,11 @@ async fn run_quick_streaming(
     output: &mut dyn Output,
 ) -> Vec<(String, String, String)> {
     let client = Client::new();
-    let messages = vec![Message::user(question)];
+    let full_question = match context {
+        Some(ctx) => format!("CONTEXT:\n{ctx}\n\nQUESTION:\n{question}"),
+        None => question.to_string(),
+    };
+    let messages = vec![Message::user(&full_question)];
 
     let mut out = Vec::with_capacity(models.len());
 
@@ -80,6 +85,7 @@ async fn run_quick_streaming(
 
 pub async fn run_quick(
     question: &str,
+    context: Option<&str>,
     models: &[ModelEntry],
     api_key: &str,
     google_api_key: Option<&str>,
@@ -92,7 +98,11 @@ pub async fn run_quick(
 
     let _ = output.write_str(&format!("(querying {} models in parallel...)\n\n", models.len()));
 
-    let messages = vec![Message::user(question)];
+    let full_question = match context {
+        Some(ctx) => format!("CONTEXT:\n{ctx}\n\nQUESTION:\n{question}"),
+        None => question.to_string(),
+    };
+    let messages = vec![Message::user(&full_question)];
 
     // For quick mode, if we are not quiet (meaning we have a real output), we do streaming.
     // If we are quiet, main.rs would have passed a dummy or we wouldn't be here.
@@ -101,6 +111,7 @@ pub async fn run_quick(
     let results = if format == "prose" {
         run_quick_streaming(
             question,
+            context,
             models,
             api_key,
             google_api_key,

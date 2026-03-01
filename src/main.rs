@@ -104,6 +104,7 @@ async fn main() {
         "quick" => {
             quick::run_quick(
                 &question,
+                args.context.as_deref(),
                 &quick_models(),
                 &api_key,
                 google_api_key.as_deref(),
