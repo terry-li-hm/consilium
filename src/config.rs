@@ -54,7 +54,7 @@ pub const EXTRACTION_MODEL: &str = "anthropic/claude-haiku-4-5";
 pub const CONSILIUM_MODEL_GPT_ENV: &str = "CONSILIUM_MODEL_GPT";
 pub const CONSILIUM_MODEL_GEMINI_ENV: &str = "CONSILIUM_MODEL_GEMINI";
 pub const CONSILIUM_MODEL_GROK_ENV: &str = "CONSILIUM_MODEL_GROK";
-pub const CONSILIUM_MODEL_DEEPSEEK_ENV: &str = "CONSILIUM_MODEL_DEEPSEEK";
+pub const CONSILIUM_MODEL_KIMI_ENV: &str = "CONSILIUM_MODEL_KIMI";
 pub const CONSILIUM_MODEL_GLM_ENV: &str = "CONSILIUM_MODEL_GLM";
 pub const CONSILIUM_MODEL_JUDGE_ENV: &str = "CONSILIUM_MODEL_JUDGE";
 
@@ -98,9 +98,9 @@ pub fn resolved_council() -> Vec<ModelEntry> {
         .map(|v| leak_if_needed(v, "x-ai/grok-4"))
         .unwrap_or("x-ai/grok-4");
 
-    let deepseek_model = env_override(CONSILIUM_MODEL_DEEPSEEK_ENV)
-        .map(|v| leak_if_needed(v, "deepseek/deepseek-r1"))
-        .unwrap_or("deepseek/deepseek-r1");
+    let kimi_model = env_override(CONSILIUM_MODEL_KIMI_ENV)
+        .map(|v| leak_if_needed(v, "moonshotai/kimi-k2.5"))
+        .unwrap_or("moonshotai/kimi-k2.5");
 
     let glm_fallback = env_override(CONSILIUM_MODEL_GLM_ENV)
         .map(|v| leak_if_needed(v, "glm-5"))
@@ -110,7 +110,7 @@ pub fn resolved_council() -> Vec<ModelEntry> {
         ("GPT", gpt_model, Some(("openai", "gpt-5.2-pro"))),
         ("Gemini", gemini_model, Some(("google", gemini_fallback))),
         ("Grok", grok_model, Some(("xai", "grok-4"))),
-        ("DeepSeek", deepseek_model, None),
+        ("Kimi", kimi_model, Some(("moonshot", "kimi-k2-5"))),
         ("GLM", "z-ai/glm-5", Some(("zhipu", glm_fallback))),
     ]
 }

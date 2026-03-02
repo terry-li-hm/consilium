@@ -1,5 +1,5 @@
 use crate::config::{
-    resolved_council, resolved_judge_model, ModelEntry, CONSILIUM_MODEL_DEEPSEEK_ENV,
+    resolved_council, resolved_judge_model, ModelEntry, CONSILIUM_MODEL_KIMI_ENV,
     CONSILIUM_MODEL_GEMINI_ENV, CONSILIUM_MODEL_GLM_ENV, CONSILIUM_MODEL_GPT_ENV,
     CONSILIUM_MODEL_GROK_ENV,
     CONSILIUM_MODEL_JUDGE_ENV,
@@ -380,7 +380,7 @@ pub fn doctor() {
     let gpt_source = env_source(CONSILIUM_MODEL_GPT_ENV);
     let gemini_source = env_source(CONSILIUM_MODEL_GEMINI_ENV);
     let grok_source = env_source(CONSILIUM_MODEL_GROK_ENV);
-    let deepseek_source = env_source(CONSILIUM_MODEL_DEEPSEEK_ENV);
+    let kimi_source = env_source(CONSILIUM_MODEL_KIMI_ENV);
     let glm_source = env_source(CONSILIUM_MODEL_GLM_ENV);
     let judge_source = env_source(CONSILIUM_MODEL_JUDGE_ENV);
 
@@ -401,10 +401,7 @@ pub fn doctor() {
         "Gemini", council[1].1, gemini_source
     );
     println!("  {:<10} {:<35} ({})", "Grok", council[2].1, grok_source);
-    println!(
-        "  {:<10} {:<35} ({})",
-        "DeepSeek", council[3].1, deepseek_source
-    );
+    println!("  {:<10} {:<35} ({})", "Kimi", council[3].1, kimi_source);
     println!("  {:<10} {:<35} ({})", "GLM", glm_model_name(&council), glm_source);
     println!("  {:<10} {:<35} ({})", "Judge", judge, judge_source);
     println!();
@@ -424,6 +421,7 @@ pub fn doctor() {
     println!("  GPT    → OpenAI direct (openai/gpt-5.2-pro)");
     println!("  Gemini → Google AI Studio (google/{gemini_fallback})");
     println!("  Grok   → xAI direct (x-ai/grok-4)");
+    println!("  Kimi   → Moonshot.cn direct (kimi-k2-5)");
     println!("  GLM    → bigmodel.cn direct (glm-5)");
 }
 
