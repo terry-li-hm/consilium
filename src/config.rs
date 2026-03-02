@@ -107,9 +107,9 @@ pub fn resolved_council() -> Vec<ModelEntry> {
         .unwrap_or("glm-5");
 
     vec![
-        ("GPT", gpt_model, None),
+        ("GPT", gpt_model, Some(("openai", "gpt-5.2-pro"))),
         ("Gemini", gemini_model, Some(("google", gemini_fallback))),
-        ("Grok", grok_model, None),
+        ("Grok", grok_model, Some(("xai", "grok-4"))),
         ("DeepSeek", deepseek_model, None),
         ("GLM", "z-ai/glm-5", Some(("zhipu", glm_fallback))),
     ]

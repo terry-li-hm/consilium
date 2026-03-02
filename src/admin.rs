@@ -414,12 +414,17 @@ pub fn doctor() {
         "OPENROUTER_API_KEY",
         key_marker("OPENROUTER_API_KEY")
     );
+    println!("  {:<20} {}", "OPENAI_API_KEY", key_marker("OPENAI_API_KEY"));
     println!("  {:<20} {}", "GOOGLE_API_KEY", key_marker("GOOGLE_API_KEY"));
+    println!("  {:<20} {}", "XAI_API_KEY", key_marker("XAI_API_KEY"));
     println!("  {:<20} {}", "ZHIPU_API_KEY", key_marker("ZHIPU_API_KEY"));
+    println!("  {:<20} {}", "MOONSHOT_API_KEY", key_marker("MOONSHOT_API_KEY"));
     println!();
-    println!("Fallbacks:");
-    println!("  Gemini → google/{gemini_fallback} (Google AI Studio)");
-    println!("  GLM    → z-ai/glm-5 (OpenRouter)");
+    println!("Fallbacks (native API → OpenRouter):");
+    println!("  GPT    → OpenAI direct (openai/gpt-5.2-pro)");
+    println!("  Gemini → Google AI Studio (google/{gemini_fallback})");
+    println!("  Grok   → xAI direct (x-ai/grok-4)");
+    println!("  GLM    → bigmodel.cn direct (glm-5)");
 }
 
 fn glm_model_name(council: &[ModelEntry]) -> &str {
