@@ -2,8 +2,7 @@
 
 use crate::api::{query_model, run_parallel_with_different_messages};
 use crate::config::{
-    sanitize_speaker_content, resolved_judge_model, CostTracker, Message, ModelEntry,
-    SessionResult,
+    resolved_judge_model, sanitize_speaker_content, CostTracker, Message, ModelEntry, SessionResult,
 };
 use crate::prompts::{
     oxford_closing_system, oxford_constructive_system, oxford_judge_prior, oxford_judge_verdict,
@@ -20,6 +19,7 @@ pub async fn run_oxford(
     api_key: &str,
     google_api_key: Option<&str>,
     zhipu_api_key: Option<&str>,
+    moonshot_api_key: Option<&str>,
     motion_override: Option<String>,
     _format: &str,
     timeout: f64,
@@ -133,6 +133,7 @@ pub async fn run_oxford(
         api_key,
         google_api_key,
         zhipu_api_key,
+        moonshot_api_key,
         800,
         Some(&cost_tracker),
         None,
@@ -185,6 +186,7 @@ pub async fn run_oxford(
         api_key,
         google_api_key,
         zhipu_api_key,
+        moonshot_api_key,
         600,
         Some(&cost_tracker),
         None,
@@ -229,6 +231,7 @@ pub async fn run_oxford(
         api_key,
         google_api_key,
         zhipu_api_key,
+        moonshot_api_key,
         400,
         Some(&cost_tracker),
         None,

@@ -14,7 +14,7 @@ pub struct SessionResult {
 }
 
 /// Model entry: (display_name, openrouter_model, fallback).
-/// Fallback is (provider, model) — currently supports "google" and "zhipu".
+/// Fallback is (provider, model) — currently supports "google", "zhipu", and "moonshot".
 pub type ModelEntry = (
     &'static str,
     &'static str,
@@ -24,6 +24,7 @@ pub type ModelEntry = (
 pub const OPENROUTER_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 pub const GOOGLE_AI_STUDIO_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 pub const BIGMODEL_URL: &str = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+pub const MOONSHOT_URL: &str = "https://api.moonshot.cn/v1/chat/completions";
 
 // Council: 5 panelists (Claude is judge-only to avoid conflict of interest)
 pub const COUNCIL: &[ModelEntry] = &[
@@ -34,7 +35,11 @@ pub const COUNCIL: &[ModelEntry] = &[
         Some(("google", "gemini-2.5-pro")),
     ),
     ("Grok", "x-ai/grok-4", None),
-    ("Kimi", "moonshotai/kimi-k2.5", None),
+    (
+        "Kimi",
+        "moonshotai/kimi-k2.5",
+        Some(("moonshot", "kimi-k2-5")),
+    ),
     ("GLM", "z-ai/glm-5", Some(("zhipu", "glm-5"))),
 ];
 
