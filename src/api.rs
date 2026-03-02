@@ -2,7 +2,7 @@
 
 use crate::config::{
     is_thinking_model, CostTracker, Message, ModelEntry, BIGMODEL_URL, GOOGLE_AI_STUDIO_URL,
-    MOONSHOT_URL, OPENROUTER_URL, XAI_URL,
+    MOONSHOT_URL, OPENAI_URL, OPENROUTER_URL, XAI_URL,
 };
 use crate::session::Output;
 use futures_util::StreamExt;
@@ -554,6 +554,97 @@ pub async fn query_xai(
     format!("[Error: Failed to get response from xai {model}]")
 }
 
+/// Query OpenAI directly (primary for GPT models).
+pub async fn query_openai(
+    client: &Client,
+    api_key: &str,
+    model: &str,
+    messages: &[Message],
+    max_tokens: u32,
+    timeout_secs: f64,
+    retries: u32,
+) -> String {
+    let mut max_tokens = max_tokens;
+    let mut timeout_secs = timeout_secs;
+
+    if is_thinking_model(model) {
+        max_tokens = max_tokens.max(2500);
+        timeout_secs = timeout_secs.max(300.0);
+    }
+
+    for attempt in 0..=retries {
+        if attempt > 0 {
+            let backoff = (2u64.pow(attempt)) as f64 + rand::random::<f64>();
+            sleep(Duration::from_secs_f64(backoff)).await;
+        }
+
+        let result = client
+            .post(OPENAI_URL)
+            .header("Authorization", format!("Bearer {api_key}"))
+            .timeout(Duration::from_secs_f64(timeout_secs))
+            .json(&serde_json::json!({
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+            }))
+            .send()
+            .await;
+
+        let response = match result {
+            Ok(r) => r,
+            Err(_) if attempt < retries => continue,
+            Err(e) => return format!("[Error: Connection failed for openai {model}: {e}]"),
+        };
+
+        if response.status() != 200 {
+            if attempt < retries {
+                continue;
+            }
+            return format!("[Error: HTTP {} from openai {model}]", response.status());
+        }
+
+        let data: Value = match response.json().await {
+            Ok(d) => d,
+            Err(_) if attempt < retries => continue,
+            Err(_) => return format!("[Error: Invalid JSON response from openai {model}]"),
+        };
+
+        if let Some(err) = data.get("error") {
+            if attempt < retries {
+                continue;
+            }
+            let msg = err
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("Unknown error");
+            return format!("[Error: {msg}]");
+        }
+
+        let choices = match data.get("choices").and_then(|c| c.as_array()) {
+            Some(c) if !c.is_empty() => c,
+            _ if attempt < retries => continue,
+            _ => return format!("[Error: No response from openai {model}]"),
+        };
+
+        let content = choices[0]
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+
+        if content.trim().is_empty() {
+            if attempt < retries {
+                continue;
+            }
+            return format!("[No response from openai {model} after {} attempts]", retries + 1);
+        }
+
+        return strip_think_blocks(content);
+    }
+
+    format!("[Error: Failed to get response from openai {model}]")
+}
+
 /// Query a model with streaming output — prints tokens as they arrive.
 pub async fn query_model_streaming(
     client: &Client,
@@ -714,6 +805,7 @@ pub async fn query_model_with_fallback(
     google_api_key: Option<&str>,
     zhipu_api_key: Option<&str>,
     moonshot_api_key: Option<&str>,
+    openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
     max_tokens: u32,
     retries: u32,
@@ -738,6 +830,26 @@ pub async fn query_model_with_fallback(
                 return (name.to_string(), zhipu_model.to_string(), primary_response);
             }
             // bigmodel.cn failed — fall through to OpenRouter
+        }
+    }
+
+    // For GPT: try OpenAI directly first
+    if let Some(("openai", openai_model)) = fallback {
+        if let Some(oapi_key) = openai_api_key {
+            let primary_response = query_openai(
+                client,
+                oapi_key,
+                openai_model,
+                messages,
+                max_tokens,
+                300.0,
+                retries,
+            )
+            .await;
+            if !primary_response.starts_with('[') {
+                return (name.to_string(), openai_model.to_string(), primary_response);
+            }
+            // OpenAI failed — fall through to OpenRouter
         }
     }
 
@@ -832,6 +944,7 @@ pub async fn query_model_async(
     google_api_key: Option<&str>,
     zhipu_api_key: Option<&str>,
     moonshot_api_key: Option<&str>,
+    openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
     max_tokens: u32,
     retries: u32,
@@ -847,6 +960,7 @@ pub async fn query_model_async(
         google_api_key,
         zhipu_api_key,
         moonshot_api_key,
+        openai_api_key,
         xai_api_key,
         max_tokens,
         retries,
@@ -863,6 +977,7 @@ pub async fn run_parallel(
     google_api_key: Option<&str>,
     zhipu_api_key: Option<&str>,
     moonshot_api_key: Option<&str>,
+    openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
     max_tokens: u32,
     cost_tracker: Option<&CostTracker>,
@@ -891,6 +1006,7 @@ pub async fn run_parallel(
             let google_api_key = google_api_key.map(|s| s.to_string());
             let zhipu_api_key = zhipu_api_key.map(|s| s.to_string());
             let moonshot_api_key = moonshot_api_key.map(|s| s.to_string());
+            let openai_api_key = openai_api_key.map(|s| s.to_string());
             let xai_api_key = xai_api_key.map(|s| s.to_string());
             let messages = messages.to_vec();
             let name = name.to_string();
@@ -913,6 +1029,7 @@ pub async fn run_parallel(
                     google_api_key.as_deref(),
                     zhipu_api_key.as_deref(),
                     moonshot_api_key.as_deref(),
+                    openai_api_key.as_deref(),
                     xai_api_key.as_deref(),
                     max_tokens,
                     2,
@@ -962,6 +1079,7 @@ pub async fn run_parallel_with_different_messages(
     google_api_key: Option<&str>,
     zhipu_api_key: Option<&str>,
     moonshot_api_key: Option<&str>,
+    openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
     max_tokens: u32,
     cost_tracker: Option<&CostTracker>,
@@ -984,6 +1102,7 @@ pub async fn run_parallel_with_different_messages(
             let google_api_key = google_api_key.map(|s| s.to_string());
             let zhipu_api_key = zhipu_api_key.map(|s| s.to_string());
             let moonshot_api_key = moonshot_api_key.map(|s| s.to_string());
+            let openai_api_key = openai_api_key.map(|s| s.to_string());
             let xai_api_key = xai_api_key.map(|s| s.to_string());
             let messages = messages.to_vec();
             let name = name.to_string();
@@ -1006,6 +1125,7 @@ pub async fn run_parallel_with_different_messages(
                     google_api_key.as_deref(),
                     zhipu_api_key.as_deref(),
                     moonshot_api_key.as_deref(),
+                    openai_api_key.as_deref(),
                     xai_api_key.as_deref(),
                     max_tokens,
                     2,

@@ -26,10 +26,11 @@ pub const GOOGLE_AI_STUDIO_URL: &str = "https://generativelanguage.googleapis.co
 pub const BIGMODEL_URL: &str = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
 pub const MOONSHOT_URL: &str = "https://api.moonshot.cn/v1/chat/completions";
 pub const XAI_URL: &str = "https://api.x.ai/v1/chat/completions";
+pub const OPENAI_URL: &str = "https://api.openai.com/v1/chat/completions";
 
 // Council: 5 panelists (Claude is judge-only to avoid conflict of interest)
 pub const COUNCIL: &[ModelEntry] = &[
-    ("GPT", "openai/gpt-5.2-pro", None),
+    ("GPT", "openai/gpt-5.2-pro", Some(("openai", "gpt-5.2-pro"))),
     (
         "Gemini",
         "google/gemini-3.1-pro-preview",
