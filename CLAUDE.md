@@ -41,22 +41,22 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `config.rs` | 889 | Constants, types, CostTracker, utility functions, 58 tests |
-| `api.rs` | 1059 | HTTP clients, SSE streaming, parallel queries, retry, fallback |
+| `config.rs` | 890 | Constants, types, CostTracker, utility functions, 58 tests |
+| `api.rs` | 1179 | HTTP clients, SSE streaming, parallel queries, retry, fallback |
 | `prompts.rs` | 719 | All prompt templates (verbatim port from Python) |
 | `session.rs` | 821 | Output trait + CompactTeeOutput, LiveWriter, session save/share/history |
-| `modes/council.rs` | 1354 | Full council deliberation |
-| `modes/discuss.rs` | 498 | Roundtable + socratic |
-| `modes/oxford.rs` | 310 | Oxford debate |
-| `modes/quick.rs` | 254 | Parallel streaming |
-| `modes/redteam.rs` | 258 | Adversarial stress-test |
-| `modes/premortem.rs` | 205 | Pre-mortem: assume failure, work backward |
-| `modes/forecast.rs` | 202 | Superforecasting: probability estimates + reconciliation |
+| `modes/council.rs` | 1365 | Full council deliberation |
+| `modes/discuss.rs` | 501 | Roundtable + socratic |
+| `modes/oxford.rs` | 314 | Oxford debate |
+| `modes/quick.rs` | 259 | Parallel streaming |
+| `modes/redteam.rs` | 260 | Adversarial stress-test |
+| `modes/premortem.rs` | 207 | Pre-mortem: assume failure, work backward |
+| `modes/forecast.rs` | 205 | Superforecasting: probability estimates + reconciliation |
 | `admin.rs` | 446 | Stats, sessions, view, search |
 | `tui.rs` | 433 | Ratatui TUI (Flexoki dark) |
 | `watch.rs` | 275 | Crossterm live watcher |
 | `cli.rs` | 191 | Clap derive struct (~30 flags) |
-| `main.rs` | 292 | Entry point + mode dispatch |
+| `main.rs` | 300 | Entry point + mode dispatch |
 
 ## Testing
 

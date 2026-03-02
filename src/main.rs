@@ -95,6 +95,7 @@ async fn main() {
     let google_api_key = std::env::var("GOOGLE_API_KEY").ok();
     let zhipu_api_key = std::env::var("ZHIPU_API_KEY").ok();
     let moonshot_api_key = std::env::var("MOONSHOT_API_KEY").ok();
+    let xai_api_key = std::env::var("XAI_API_KEY").ok();
 
     let client = reqwest::Client::new();
     let mode = if let Some(explicit) = args.explicit_mode() {
@@ -132,6 +133,7 @@ async fn main() {
                 google_api_key.as_deref(),
                 zhipu_api_key.as_deref(),
                 moonshot_api_key.as_deref(),
+                xai_api_key.as_deref(),
                 &mut *output,
                 &args.format,
                 args.timeout,
@@ -146,6 +148,7 @@ async fn main() {
                 google_api_key.as_deref(),
                 zhipu_api_key.as_deref(),
                 moonshot_api_key.as_deref(),
+                xai_api_key.as_deref(),
                 None,
                 &args.format,
                 args.timeout,
@@ -161,6 +164,7 @@ async fn main() {
                 google_api_key.as_deref(),
                 zhipu_api_key.as_deref(),
                 moonshot_api_key.as_deref(),
+                xai_api_key.as_deref(),
                 args.context.clone(),
                 &args.format,
                 args.timeout,
@@ -176,6 +180,7 @@ async fn main() {
                 google_api_key.as_deref(),
                 zhipu_api_key.as_deref(),
                 moonshot_api_key.as_deref(),
+                xai_api_key.as_deref(),
                 args.context.clone(),
                 &args.format,
                 args.timeout,
@@ -191,6 +196,7 @@ async fn main() {
                 google_api_key.as_deref(),
                 zhipu_api_key.as_deref(),
                 moonshot_api_key.as_deref(),
+                xai_api_key.as_deref(),
                 args.context.clone(),
                 &args.format,
                 args.timeout,
@@ -206,6 +212,7 @@ async fn main() {
                 google_api_key.as_deref(),
                 zhipu_api_key.as_deref(),
                 moonshot_api_key.as_deref(),
+                xai_api_key.as_deref(),
                 &mode,
                 args.rounds as u32,
                 args.context.clone(),
@@ -251,6 +258,7 @@ async fn main() {
                 google_api_key.as_deref(),
                 zhipu_api_key.as_deref(),
                 moonshot_api_key.as_deref(),
+                xai_api_key.as_deref(),
                 rounds,
                 &mut *output,
                 true,
