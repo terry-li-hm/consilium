@@ -93,3 +93,9 @@ This codebase was built via delegation to Codex and Gemini CLI. When delegating 
 - Tasks touching different files can run in parallel; same-file tasks must be phased
 - Gemini tends to touch more files than asked (bonus clippy fixes, global allows) — review diff scope
 - Delegates don't write tests unless explicitly tasked — make it a separate delegation if needed
+
+## API key architecture
+
+- **`COUNCIL` const is dead code.** `resolved_council()` in `config.rs` is the runtime source of truth for council composition and fallback providers. Editing `COUNCIL` has zero runtime effect.
+- **`query_judge()` reads `ANTHROPIC_API_KEY` from env directly** (not threaded through function signatures). This avoids cascading changes across 30+ callers. The pattern: leaf function reads `std::env::var("KEY")`, tries native API, falls back to OpenRouter if key absent or on error.
+- **Native API fallback pattern (all providers):** each provider tries its own direct API first (Moonshot.cn, xAI, OpenAI, Google AI Studio, Zhipu, Anthropic), falls back to OpenRouter. Keys loaded from macOS Keychain in `.zshenv`.
