@@ -355,7 +355,7 @@ pub async fn query_bigmodel(
     format!("[Error: Failed to get response from bigmodel {model}]")
 }
 
-/// Query Moonshot directly (fallback for Kimi models).
+/// Query Moonshot directly (primary for Kimi models).
 pub async fn query_moonshot(
     client: &Client,
     api_key: &str,
@@ -741,6 +741,26 @@ pub async fn query_model_with_fallback(
         }
     }
 
+    // For Kimi: try Moonshot.cn directly first
+    if let Some(("moonshot", moonshot_model)) = fallback {
+        if let Some(mapi_key) = moonshot_api_key {
+            let primary_response = query_moonshot(
+                client,
+                mapi_key,
+                moonshot_model,
+                messages,
+                max_tokens,
+                300.0,
+                retries,
+            )
+            .await;
+            if !primary_response.starts_with('[') {
+                return (name.to_string(), moonshot_model.to_string(), primary_response);
+            }
+            // Moonshot failed — fall through to OpenRouter
+        }
+    }
+
     // For Grok: try xAI directly first
     if let Some(("xai", xai_model)) = fallback {
         if let Some(xapi_key) = xai_api_key {
@@ -796,23 +816,6 @@ pub async fn query_model_with_fallback(
     // If OpenRouter succeeded, return
     if !response.starts_with('[') {
         return (name.to_string(), model_name, response);
-    }
-
-    // Try fallback (Moonshot.cn direct API)
-    if let Some(("moonshot", moonshot_model)) = fallback {
-        if let Some(mapi_key) = moonshot_api_key {
-            let fb_response = query_moonshot(
-                client,
-                mapi_key,
-                moonshot_model,
-                messages,
-                max_tokens,
-                300.0,
-                retries,
-            )
-            .await;
-            return (name.to_string(), moonshot_model.to_string(), fb_response);
-        }
     }
 
     (name.to_string(), model_name, response)
