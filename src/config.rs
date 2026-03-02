@@ -35,7 +35,7 @@ pub const COUNCIL: &[ModelEntry] = &[
     ),
     ("Grok", "x-ai/grok-4", None),
     ("DeepSeek", "deepseek/deepseek-r1", None),
-    ("GLM", "z-ai/glm-5", Some(("zhipu", "glm-4-plus"))),
+    ("GLM", "z-ai/glm-5", Some(("zhipu", "glm-5"))),
 ];
 
 pub const JUDGE_MODEL: &str = "anthropic/claude-opus-4-6";

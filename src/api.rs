@@ -520,6 +520,26 @@ pub async fn query_model_with_fallback(
 ) -> (String, String, String) {
     let model_name = model.split('/').next_back().unwrap_or(model).to_string();
 
+    // For GLM: try bigmodel.cn directly first (more reliable than OpenRouter z-ai)
+    if let Some(("zhipu", zhipu_model)) = fallback {
+        if let Some(zapi_key) = zhipu_api_key {
+            let primary_response = query_bigmodel(
+                client,
+                zapi_key,
+                zhipu_model,
+                messages,
+                max_tokens,
+                300.0,
+                retries,
+            )
+            .await;
+            if !primary_response.starts_with('[') {
+                return (name.to_string(), zhipu_model.to_string(), primary_response);
+            }
+            // bigmodel.cn failed — fall through to OpenRouter
+        }
+    }
+
     let response = query_model(
         client,
         api_key,
@@ -543,22 +563,6 @@ pub async fn query_model_with_fallback(
             let fb_response = query_google_ai_studio(
                 client,
                 gapi_key,
-                fallback_model,
-                messages,
-                max_tokens,
-                300.0,
-                retries,
-            )
-            .await;
-            return (name.to_string(), fallback_model.to_string(), fb_response);
-        }
-    }
-
-    if let Some(("zhipu", fallback_model)) = fallback {
-        if let Some(zapi_key) = zhipu_api_key {
-            let fb_response = query_bigmodel(
-                client,
-                zapi_key,
                 fallback_model,
                 messages,
                 max_tokens,
