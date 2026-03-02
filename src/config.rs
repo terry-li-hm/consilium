@@ -34,7 +34,7 @@ pub const COUNCIL: &[ModelEntry] = &[
         Some(("google", "gemini-2.5-pro")),
     ),
     ("Grok", "x-ai/grok-4", None),
-    ("DeepSeek", "deepseek/deepseek-r1", None),
+    ("Kimi", "moonshotai/kimi-k2.5", None),
     ("GLM", "z-ai/glm-5", Some(("zhipu", "glm-5"))),
 ];
 
