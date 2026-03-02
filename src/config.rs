@@ -14,7 +14,7 @@ pub struct SessionResult {
 }
 
 /// Model entry: (display_name, openrouter_model, fallback).
-/// Fallback is (provider, model) — currently only "google" provider supported.
+/// Fallback is (provider, model) — currently supports "google" and "zhipu".
 pub type ModelEntry = (
     &'static str,
     &'static str,
@@ -23,6 +23,7 @@ pub type ModelEntry = (
 
 pub const OPENROUTER_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 pub const GOOGLE_AI_STUDIO_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
+pub const BIGMODEL_URL: &str = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
 
 // Council: 5 panelists (Claude is judge-only to avoid conflict of interest)
 pub const COUNCIL: &[ModelEntry] = &[
@@ -34,7 +35,7 @@ pub const COUNCIL: &[ModelEntry] = &[
     ),
     ("Grok", "x-ai/grok-4", None),
     ("DeepSeek", "deepseek/deepseek-r1", None),
-    ("GLM", "z-ai/glm-5", None),
+    ("GLM", "z-ai/glm-5", Some(("zhipu", "glm-4-plus"))),
 ];
 
 pub const JUDGE_MODEL: &str = "anthropic/claude-opus-4-6";

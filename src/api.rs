@@ -1,7 +1,8 @@
 //! HTTP clients, SSE streaming, parallel queries, retry, and fallback.
 
 use crate::config::{
-    is_thinking_model, CostTracker, Message, ModelEntry, GOOGLE_AI_STUDIO_URL, OPENROUTER_URL,
+    is_thinking_model, CostTracker, Message, ModelEntry, BIGMODEL_URL, GOOGLE_AI_STUDIO_URL,
+    OPENROUTER_URL,
 };
 use crate::session::Output;
 use futures_util::StreamExt;
@@ -246,6 +247,114 @@ pub async fn query_google_ai_studio(
     format!("[Error: Failed to get response from AI Studio {model}]")
 }
 
+/// Query Zhipu bigmodel.cn directly (fallback for GLM models).
+pub async fn query_bigmodel(
+    client: &Client,
+    api_key: &str,
+    model: &str,
+    messages: &[Message],
+    max_tokens: u32,
+    timeout_secs: f64,
+    retries: u32,
+) -> String {
+    let mut max_tokens = max_tokens;
+    let mut timeout_secs = timeout_secs;
+
+    if is_thinking_model(model) {
+        max_tokens = max_tokens.max(2500);
+        timeout_secs = timeout_secs.max(300.0);
+    }
+
+    for attempt in 0..=retries {
+        if attempt > 0 {
+            let backoff = (2u64.pow(attempt)) as f64 + rand::random::<f64>();
+            sleep(Duration::from_secs_f64(backoff)).await;
+        }
+
+        let result = client
+            .post(BIGMODEL_URL)
+            .header("Authorization", format!("Bearer {api_key}"))
+            .timeout(Duration::from_secs_f64(timeout_secs))
+            .json(&serde_json::json!({
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+            }))
+            .send()
+            .await;
+
+        let response = match result {
+            Ok(r) => r,
+            Err(_) if attempt < retries => continue,
+            Err(e) => return format!("[Error: Connection failed for bigmodel {model}: {e}]"),
+        };
+
+        if response.status() != 200 {
+            if attempt < retries {
+                continue;
+            }
+            return format!("[Error: HTTP {} from bigmodel {model}]", response.status());
+        }
+
+        let data: Value = match response.json().await {
+            Ok(d) => d,
+            Err(_) if attempt < retries => continue,
+            Err(_) => return format!("[Error: Invalid JSON response from bigmodel {model}]"),
+        };
+
+        if let Some(err) = data.get("error") {
+            if attempt < retries {
+                continue;
+            }
+            let msg = err
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("Unknown error");
+            return format!("[Error: {msg}]");
+        }
+
+        let choices = match data.get("choices").and_then(|c| c.as_array()) {
+            Some(c) if !c.is_empty() => c,
+            _ if attempt < retries => continue,
+            _ => return format!("[Error: No response from bigmodel {model}]"),
+        };
+
+        let content = choices[0]
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+
+        if content.trim().is_empty() {
+            let reasoning = choices[0]
+                .get("message")
+                .and_then(|m| m.get("reasoning"))
+                .and_then(|r| r.as_str())
+                .unwrap_or("");
+            if !reasoning.trim().is_empty() {
+                if attempt < retries {
+                    continue;
+                }
+                let preview = &reasoning[..reasoning.len().min(150)];
+                return format!(
+                    "[Model still thinking - needs more tokens. Partial reasoning: {preview}...]"
+                );
+            }
+            if attempt < retries {
+                continue;
+            }
+            return format!(
+                "[No response from bigmodel {model} after {} attempts]",
+                retries + 1
+            );
+        }
+
+        return strip_think_blocks(content);
+    }
+
+    format!("[Error: Failed to get response from bigmodel {model}]")
+}
+
 /// Query a model with streaming output — prints tokens as they arrive.
 pub async fn query_model_streaming(
     client: &Client,
@@ -396,7 +505,7 @@ pub async fn query_model_streaming(
 }
 
 /// Async query for parallel phases.
-pub async fn query_model_async(
+pub async fn query_model_with_fallback(
     client: &Client,
     api_key: &str,
     model: &str,
@@ -404,6 +513,7 @@ pub async fn query_model_async(
     name: &str,
     fallback: Option<(&str, &str)>,
     google_api_key: Option<&str>,
+    zhipu_api_key: Option<&str>,
     max_tokens: u32,
     retries: u32,
     cost_tracker: Option<&CostTracker>,
@@ -444,7 +554,53 @@ pub async fn query_model_async(
         }
     }
 
+    if let Some(("zhipu", fallback_model)) = fallback {
+        if let Some(zapi_key) = zhipu_api_key {
+            let fb_response = query_bigmodel(
+                client,
+                zapi_key,
+                fallback_model,
+                messages,
+                max_tokens,
+                300.0,
+                retries,
+            )
+            .await;
+            return (name.to_string(), fallback_model.to_string(), fb_response);
+        }
+    }
+
     (name.to_string(), model_name, response)
+}
+
+/// Async query for parallel phases.
+pub async fn query_model_async(
+    client: &Client,
+    api_key: &str,
+    model: &str,
+    messages: &[Message],
+    name: &str,
+    fallback: Option<(&str, &str)>,
+    google_api_key: Option<&str>,
+    zhipu_api_key: Option<&str>,
+    max_tokens: u32,
+    retries: u32,
+    cost_tracker: Option<&CostTracker>,
+) -> (String, String, String) {
+    query_model_with_fallback(
+        client,
+        api_key,
+        model,
+        messages,
+        name,
+        fallback,
+        google_api_key,
+        zhipu_api_key,
+        max_tokens,
+        retries,
+        cost_tracker,
+    )
+    .await
 }
 
 /// Parallel query panelists with shared messages.
@@ -453,6 +609,7 @@ pub async fn run_parallel(
     messages: &[Message],
     api_key: &str,
     google_api_key: Option<&str>,
+    zhipu_api_key: Option<&str>,
     max_tokens: u32,
     cost_tracker: Option<&CostTracker>,
     output: Option<&mut dyn Output>,
@@ -478,6 +635,7 @@ pub async fn run_parallel(
             let client = client.clone();
             let api_key = api_key.to_string();
             let google_api_key = google_api_key.map(|s| s.to_string());
+            let zhipu_api_key = zhipu_api_key.map(|s| s.to_string());
             let messages = messages.to_vec();
             let name = name.to_string();
             let model = model.to_string();
@@ -489,7 +647,7 @@ pub async fn run_parallel(
                 let fallback_ref: Option<(&str, &str)> = fallback_owned
                     .as_ref()
                     .map(|(p, m)| (p.as_str(), m.as_str()));
-                let result = query_model_async(
+                let result = query_model_with_fallback(
                     &client,
                     &api_key,
                     &model,
@@ -497,6 +655,7 @@ pub async fn run_parallel(
                     &name,
                     fallback_ref,
                     google_api_key.as_deref(),
+                    zhipu_api_key.as_deref(),
                     max_tokens,
                     2,
                     cost_tracker.as_ref(),
@@ -543,6 +702,7 @@ pub async fn run_parallel_with_different_messages(
     messages_list: &[Vec<Message>],
     api_key: &str,
     google_api_key: Option<&str>,
+    zhipu_api_key: Option<&str>,
     max_tokens: u32,
     cost_tracker: Option<&CostTracker>,
     output: Option<&mut dyn Output>,
@@ -562,6 +722,7 @@ pub async fn run_parallel_with_different_messages(
             let client = client.clone();
             let api_key = api_key.to_string();
             let google_api_key = google_api_key.map(|s| s.to_string());
+            let zhipu_api_key = zhipu_api_key.map(|s| s.to_string());
             let messages = messages.to_vec();
             let name = name.to_string();
             let model = model.to_string();
@@ -573,7 +734,7 @@ pub async fn run_parallel_with_different_messages(
                 let fallback_ref: Option<(&str, &str)> = fallback_owned
                     .as_ref()
                     .map(|(p, m)| (p.as_str(), m.as_str()));
-                let result = query_model_async(
+                let result = query_model_with_fallback(
                     &client,
                     &api_key,
                     &model,
@@ -581,6 +742,7 @@ pub async fn run_parallel_with_different_messages(
                     &name,
                     fallback_ref,
                     google_api_key.as_deref(),
+                    zhipu_api_key.as_deref(),
                     max_tokens,
                     2,
                     cost_tracker.as_ref(),
