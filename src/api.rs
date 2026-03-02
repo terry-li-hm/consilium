@@ -649,30 +649,6 @@ pub async fn query_model_with_fallback(
         }
     }
 
-    // For Kimi: try Moonshot directly first (more reliable than OpenRouter moonshotai)
-    if let Some(("moonshot", moonshot_model)) = fallback {
-        if let Some(mapi_key) = moonshot_api_key {
-            let primary_response = query_moonshot(
-                client,
-                mapi_key,
-                moonshot_model,
-                messages,
-                max_tokens,
-                300.0,
-                retries,
-            )
-            .await;
-            if !primary_response.starts_with('[') {
-                return (
-                    name.to_string(),
-                    moonshot_model.to_string(),
-                    primary_response,
-                );
-            }
-            // moonshot failed — fall through to OpenRouter
-        }
-    }
-
     let response = query_model(
         client,
         api_key,
@@ -704,6 +680,23 @@ pub async fn query_model_with_fallback(
             )
             .await;
             return (name.to_string(), fallback_model.to_string(), fb_response);
+        }
+    }
+
+    // Try fallback (Moonshot.cn direct API)
+    if let Some(("moonshot", moonshot_model)) = fallback {
+        if let Some(mapi_key) = moonshot_api_key {
+            let fb_response = query_moonshot(
+                client,
+                mapi_key,
+                moonshot_model,
+                messages,
+                max_tokens,
+                300.0,
+                retries,
+            )
+            .await;
+            return (name.to_string(), moonshot_model.to_string(), fb_response);
         }
     }
 
