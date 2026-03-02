@@ -2,7 +2,8 @@
 
 use crate::api::{query_model, run_parallel_with_different_messages};
 use crate::config::{
-    sanitize_speaker_content, CostTracker, Message, ModelEntry, SessionResult, JUDGE_MODEL,
+    sanitize_speaker_content, resolved_judge_model, CostTracker, Message, ModelEntry,
+    SessionResult,
 };
 use crate::prompts::{
     oxford_closing_system, oxford_constructive_system, oxford_judge_prior, oxford_judge_verdict,
@@ -27,6 +28,7 @@ pub async fn run_oxford(
     let start = Instant::now();
     let cost_tracker = CostTracker::new();
     let client = Client::new();
+    let judge_model = resolved_judge_model();
 
     let mut transcript_parts = Vec::new();
 
@@ -49,7 +51,7 @@ pub async fn run_oxford(
         let m = query_model(
             &client,
             api_key,
-            JUDGE_MODEL,
+            judge_model.as_str(),
             &m_messages,
             100,
             timeout,
@@ -91,7 +93,7 @@ pub async fn run_oxford(
     let prior_response = query_model(
         &client,
         api_key,
-        JUDGE_MODEL,
+        judge_model.as_str(),
         &prior_messages,
         200,
         timeout,
@@ -274,7 +276,7 @@ pub async fn run_oxford(
     let verdict = query_model(
         &client,
         api_key,
-        JUDGE_MODEL,
+        judge_model.as_str(),
         &verdict_messages,
         1000,
         timeout,

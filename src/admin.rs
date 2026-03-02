@@ -1,7 +1,11 @@
-use crate::config::OPENROUTER_URL;
+use crate::config::{
+    resolved_council, resolved_judge_model, ModelEntry, CONSILIUM_MODEL_DEEPSEEK_ENV,
+    CONSILIUM_MODEL_GEMINI_ENV, CONSILIUM_MODEL_GLM_ENV, CONSILIUM_MODEL_GPT_ENV,
+    CONSILIUM_MODEL_GROK_ENV,
+    CONSILIUM_MODEL_JUDGE_ENV,
+};
 use crate::session::get_sessions_dir;
 use chrono::{DateTime, Local};
-use crossterm::style::{Color, Stylize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -369,117 +373,74 @@ pub fn search_sessions(term: &str) {
     }
 }
 
-pub async fn run_doctor(client: &reqwest::Client) {
-    let mut all_passed = true;
+pub fn doctor() {
+    let council = resolved_council();
+    let judge = resolved_judge_model();
 
-    println!("consilium diagnostics\n");
+    let gpt_source = env_source(CONSILIUM_MODEL_GPT_ENV);
+    let gemini_source = env_source(CONSILIUM_MODEL_GEMINI_ENV);
+    let grok_source = env_source(CONSILIUM_MODEL_GROK_ENV);
+    let deepseek_source = env_source(CONSILIUM_MODEL_DEEPSEEK_ENV);
+    let glm_source = env_source(CONSILIUM_MODEL_GLM_ENV);
+    let judge_source = env_source(CONSILIUM_MODEL_JUDGE_ENV);
 
-    // Check OPENROUTER_API_KEY
-    let openrouter_key = std::env::var("OPENROUTER_API_KEY");
-    match openrouter_key {
-        Ok(ref key) if !key.trim().is_empty() => {
-            println!(
-                "  {} OPENROUTER_API_KEY is set",
-                "✓".to_string().with(Color::Green)
-            );
-        }
-        _ => {
-            println!(
-                "  {} OPENROUTER_API_KEY not set",
-                "✗".to_string().with(Color::Red)
-            );
-            all_passed = false;
-        }
-    }
+    let gemini_fallback = council
+        .iter()
+        .find(|(name, _, _)| *name == "Gemini")
+        .and_then(|(_, _, fallback)| *fallback)
+        .map(|(_, model)| model)
+        .unwrap_or("gemini-2.5-pro");
 
-    // Check GOOGLE_API_KEY (optional)
-    let google_key = std::env::var("GOOGLE_API_KEY");
-    match google_key {
-        Ok(ref key) if !key.trim().is_empty() => {
-            println!(
-                "  {} GOOGLE_API_KEY is set",
-                "✓".to_string().with(Color::Green)
-            );
-        }
-        _ => {
-            println!(
-                "  {} GOOGLE_API_KEY not set (optional, Gemini fallback disabled)",
-                "○".to_string().with(Color::Yellow)
-            );
-        }
-    }
-
-    // Check session directory
-    let sessions_dir = get_sessions_dir();
-    if sessions_dir.exists() {
-        println!(
-            "  {} Session directory exists ({})",
-            "✓".to_string().with(Color::Green),
-            sessions_dir.display()
-        );
-    } else {
-        match fs::create_dir_all(&sessions_dir) {
-            Ok(_) => {
-                println!(
-                    "  {} Session directory created ({})",
-                    "✓".to_string().with(Color::Green),
-                    sessions_dir.display()
-                );
-            }
-            Err(e) => {
-                println!(
-                    "  {} Failed to create session directory: {}",
-                    "✗".to_string().with(Color::Red),
-                    e
-                );
-                all_passed = false;
-            }
-        }
-    }
-
-    // Test API call to OpenRouter
-    let api_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_default();
-    if !api_key.trim().is_empty() {
-        print!("  Testing OpenRouter API connection... ");
-        let result = client
-            .post(OPENROUTER_URL)
-            .header("Authorization", format!("Bearer {api_key}"))
-            .json(&serde_json::json!({
-                "model": "meta-llama/llama-3.3-70b-instruct",
-                "messages": [{"role": "user", "content": "ping"}],
-                "max_tokens": 1,
-            }))
-            .timeout(std::time::Duration::from_secs(30))
-            .send()
-            .await;
-
-        match result {
-            Ok(response) => {
-                let status = response.status();
-                if status == 200 {
-                    println!("{}", "✓ OK".to_string().with(Color::Green));
-                } else if status == 401 {
-                    println!("{}", "✗ Invalid API key".to_string().with(Color::Red));
-                    all_passed = false;
-                } else {
-                    println!("{}", format!("✗ HTTP {}", status).with(Color::Red));
-                    all_passed = false;
-                }
-            }
-            Err(e) => {
-                println!("{}", format!("✗ Connection failed: {e}").with(Color::Red));
-                all_passed = false;
-            }
-        }
-    }
-
+    println!("consilium doctor");
+    println!("═══════════════════════════════════════");
     println!();
-    if all_passed {
-        println!("{}", "Ready to deliberate!".to_string().with(Color::Green));
-    } else {
-        println!(
-            "{}",
-            "Fix the issues above before running consilium.".with(Color::Red)
-        );
+    println!("Council models:");
+    println!("  {:<10} {:<35} ({})", "GPT", council[0].1, gpt_source);
+    println!(
+        "  {:<10} {:<35} ({})",
+        "Gemini", council[1].1, gemini_source
+    );
+    println!("  {:<10} {:<35} ({})", "Grok", council[2].1, grok_source);
+    println!(
+        "  {:<10} {:<35} ({})",
+        "DeepSeek", council[3].1, deepseek_source
+    );
+    println!("  {:<10} {:<35} ({})", "GLM", glm_model_name(&council), glm_source);
+    println!("  {:<10} {:<35} ({})", "Judge", judge, judge_source);
+    println!();
+    println!("API keys:");
+    println!(
+        "  {:<20} {}",
+        "OPENROUTER_API_KEY",
+        key_marker("OPENROUTER_API_KEY")
+    );
+    println!("  {:<20} {}", "GOOGLE_API_KEY", key_marker("GOOGLE_API_KEY"));
+    println!("  {:<20} {}", "ZHIPU_API_KEY", key_marker("ZHIPU_API_KEY"));
+    println!();
+    println!("Fallbacks:");
+    println!("  Gemini → google/{gemini_fallback} (Google AI Studio)");
+    println!("  GLM    → z-ai/glm-5 (OpenRouter)");
+}
+
+fn glm_model_name(council: &[ModelEntry]) -> &str {
+    council
+        .iter()
+        .find(|(name, _, _)| *name == "GLM")
+        .and_then(|(_, _, fallback)| *fallback)
+        .map(|(_, model)| model)
+        .unwrap_or("glm-5")
+}
+
+fn env_source(var: &'static str) -> &'static str {
+    match std::env::var(var) {
+        Ok(value) if !value.trim().is_empty() => var,
+        _ => "default",
+    }
+}
+
+fn key_marker(var: &str) -> &'static str {
+    match std::env::var(var) {
+        Ok(value) if !value.trim().is_empty() => "✓ set",
+        _ => "✗ not set",
     }
 }

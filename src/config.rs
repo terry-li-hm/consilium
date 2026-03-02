@@ -44,28 +44,99 @@ pub const CRITIQUE_MODEL: &str = "google/gemini-3.1-pro-preview";
 pub const CLASSIFIER_MODEL: &str = "anthropic/claude-opus-4-6"; // same as judge
 pub const EXTRACTION_MODEL: &str = "anthropic/claude-haiku-4-5";
 
+pub const CONSILIUM_MODEL_GPT_ENV: &str = "CONSILIUM_MODEL_GPT";
+pub const CONSILIUM_MODEL_GEMINI_ENV: &str = "CONSILIUM_MODEL_GEMINI";
+pub const CONSILIUM_MODEL_GROK_ENV: &str = "CONSILIUM_MODEL_GROK";
+pub const CONSILIUM_MODEL_DEEPSEEK_ENV: &str = "CONSILIUM_MODEL_DEEPSEEK";
+pub const CONSILIUM_MODEL_GLM_ENV: &str = "CONSILIUM_MODEL_GLM";
+pub const CONSILIUM_MODEL_JUDGE_ENV: &str = "CONSILIUM_MODEL_JUDGE";
+
+fn env_override(var: &str) -> Option<String> {
+    std::env::var(var).ok().and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn leak_if_needed(value: String, default: &'static str) -> &'static str {
+    if value == default {
+        default
+    } else {
+        Box::leak(value.into_boxed_str())
+    }
+}
+
+/// Resolve council models at runtime, applying env var overrides.
+pub fn resolved_council() -> Vec<ModelEntry> {
+    let gpt_model = env_override(CONSILIUM_MODEL_GPT_ENV)
+        .map(|v| leak_if_needed(v, "openai/gpt-5.2-pro"))
+        .unwrap_or("openai/gpt-5.2-pro");
+
+    let gemini_override = env_override(CONSILIUM_MODEL_GEMINI_ENV);
+    let gemini_model = gemini_override
+        .as_ref()
+        .map(|v| leak_if_needed(v.clone(), "google/gemini-3.1-pro-preview"))
+        .unwrap_or("google/gemini-3.1-pro-preview");
+    let gemini_fallback = gemini_override
+        .as_ref()
+        .map(|v| v.strip_prefix("google/").unwrap_or(v.as_str()).to_string())
+        .map(|v| leak_if_needed(v, "gemini-2.5-pro"))
+        .unwrap_or("gemini-2.5-pro");
+
+    let grok_model = env_override(CONSILIUM_MODEL_GROK_ENV)
+        .map(|v| leak_if_needed(v, "x-ai/grok-4"))
+        .unwrap_or("x-ai/grok-4");
+
+    let deepseek_model = env_override(CONSILIUM_MODEL_DEEPSEEK_ENV)
+        .map(|v| leak_if_needed(v, "deepseek/deepseek-r1"))
+        .unwrap_or("deepseek/deepseek-r1");
+
+    let glm_fallback = env_override(CONSILIUM_MODEL_GLM_ENV)
+        .map(|v| leak_if_needed(v, "glm-5"))
+        .unwrap_or("glm-5");
+
+    vec![
+        ("GPT", gpt_model, None),
+        ("Gemini", gemini_model, Some(("google", gemini_fallback))),
+        ("Grok", grok_model, None),
+        ("DeepSeek", deepseek_model, None),
+        ("GLM", "z-ai/glm-5", Some(("zhipu", glm_fallback))),
+    ]
+}
+
+/// Resolve judge model at runtime, applying env var override.
+pub fn resolved_judge_model() -> String {
+    env_override(CONSILIUM_MODEL_JUDGE_ENV).unwrap_or_else(|| JUDGE_MODEL.to_string())
+}
+
 /// Quick mode: council + Claude (no judge conflict in quick mode).
 pub fn quick_models() -> Vec<ModelEntry> {
-    let mut models: Vec<ModelEntry> = vec![("Claude", JUDGE_MODEL, None)];
-    models.extend_from_slice(COUNCIL);
+    let judge = resolved_judge_model();
+    let judge = leak_if_needed(judge, JUDGE_MODEL);
+    let mut models: Vec<ModelEntry> = vec![("Claude", judge, None)];
+    models.extend(resolved_council());
     models
 }
 
 /// Discussion mode: first 3 council models.
 pub fn discuss_models() -> Vec<ModelEntry> {
-    COUNCIL[..3].to_vec()
+    resolved_council().into_iter().take(3).collect()
 }
 
 pub const DISCUSS_HOST: &str = "anthropic/claude-opus-4-6";
 
 /// Red team mode: first 3 council models.
 pub fn redteam_models() -> Vec<ModelEntry> {
-    COUNCIL[..3].to_vec()
+    resolved_council().into_iter().take(3).collect()
 }
 
 /// Oxford debate: first 2 council models.
 pub fn oxford_models() -> Vec<ModelEntry> {
-    COUNCIL[..2].to_vec()
+    resolved_council().into_iter().take(2).collect()
 }
 
 /// Thinking model suffixes — these get higher tokens and longer timeouts.

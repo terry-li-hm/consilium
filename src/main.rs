@@ -3,7 +3,7 @@ use consilium::admin;
 use consilium::api::classify_mode;
 use consilium::cli::Cli;
 use consilium::config::{
-    discuss_models, oxford_models, quick_models, redteam_models, CostTracker, COUNCIL,
+    discuss_models, oxford_models, quick_models, redteam_models, resolved_council, CostTracker,
 };
 use consilium::modes::{council, discuss, forecast, oxford, premortem, quick, redteam};
 use consilium::session::{
@@ -73,8 +73,7 @@ async fn main() {
     }
 
     if args.doctor {
-        let doctor_client = reqwest::Client::new();
-        admin::run_doctor(&doctor_client).await;
+        admin::doctor();
         std::process::exit(0);
     }
 
@@ -211,6 +210,7 @@ async fn main() {
             .await
         }
         "council" => {
+            let council = resolved_council();
             let rounds = if args.deep {
                 args.rounds.max(2)
             } else {
@@ -230,7 +230,7 @@ async fn main() {
 
             let challenger_idx = args.challenger.as_ref().and_then(|target| {
                 let target = target.to_lowercase();
-                COUNCIL.iter().position(|(name, model, _)| {
+                council.iter().position(|(name, model, _)| {
                     name.to_lowercase() == target
                         || model.split('/').next_back().unwrap_or(model).to_lowercase() == target
                         || model.to_lowercase() == target
@@ -239,7 +239,7 @@ async fn main() {
 
             council::run_council(
                 &question,
-                COUNCIL,
+                &council,
                 &api_key,
                 google_api_key.as_deref(),
                 zhipu_api_key.as_deref(),

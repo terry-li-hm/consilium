@@ -4,7 +4,7 @@ use crate::api::{query_model, query_model_async, run_parallel};
 use crate::config::{
     detect_consensus, detect_social_context, is_error_response, parse_confidence,
     sanitize_speaker_content, CostTracker, Message, ModelEntry, SessionResult, CRITIQUE_MODEL,
-    EXTRACTION_MODEL, JUDGE_MODEL,
+    EXTRACTION_MODEL, resolved_judge_model,
 };
 use crate::prompts::{
     council_blind_system, council_challenger_addition, council_debate_system,
@@ -315,8 +315,12 @@ pub async fn decompose_question(
     cost_tracker: &CostTracker,
 ) -> Vec<String> {
     let client = Client::new();
+    let judge_model = resolved_judge_model();
 
-    let judge_name = JUDGE_MODEL.split('/').next_back().unwrap_or(JUDGE_MODEL);
+    let judge_name = judge_model
+        .split('/')
+        .next_back()
+        .unwrap_or(judge_model.as_str());
     let _ = output.write_str(&format!("### Question Decomposition ({judge_name})\n"));
 
     let messages = vec![
@@ -327,7 +331,7 @@ pub async fn decompose_question(
     let response = query_model(
         &client,
         api_key,
-        JUDGE_MODEL,
+        judge_model.as_str(),
         &messages,
         300,
         120.0,
@@ -638,6 +642,7 @@ pub async fn run_council(
     let start = Instant::now();
     let client = Client::new();
     let cost_tracker = CostTracker::new();
+    let judge_model = resolved_judge_model();
 
     let domain_hint = domain.and_then(domain_context);
     let social_mode = detect_social_context(question);
@@ -1093,7 +1098,10 @@ pub async fn run_council(
             )),
         ];
 
-        let judge_name = JUDGE_MODEL.split('/').next_back().unwrap_or(JUDGE_MODEL);
+        let judge_name = judge_model
+            .split('/')
+            .next_back()
+            .unwrap_or(judge_model.as_str());
         let judge_t0 = Instant::now();
         let _ = output.begin_phase("JUDGMENT");
         let _ = output.begin_participant(&format!("Judge ({judge_name})"));
@@ -1102,7 +1110,7 @@ pub async fn run_council(
         let mut judge_response = query_model(
             &client,
             api_key,
-            JUDGE_MODEL,
+            judge_model.as_str(),
             &judge_messages,
             1200,
             300.0,
@@ -1185,7 +1193,7 @@ pub async fn run_council(
                 let final_response = query_model(
                     &client,
                     api_key,
-                    JUDGE_MODEL,
+                    judge_model.as_str(),
                     &revision_messages,
                     1200,
                     300.0,
