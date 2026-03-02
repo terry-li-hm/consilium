@@ -412,6 +412,7 @@ pub fn doctor() {
         key_marker("OPENROUTER_API_KEY")
     );
     println!("  {:<20} {}", "OPENAI_API_KEY", key_marker("OPENAI_API_KEY"));
+    println!("  {:<20} {}", "ANTHROPIC_API_KEY", key_marker("ANTHROPIC_API_KEY"));
     println!("  {:<20} {}", "GOOGLE_API_KEY", key_marker("GOOGLE_API_KEY"));
     println!("  {:<20} {}", "XAI_API_KEY", key_marker("XAI_API_KEY"));
     println!("  {:<20} {}", "ZHIPU_API_KEY", key_marker("ZHIPU_API_KEY"));
@@ -423,6 +424,7 @@ pub fn doctor() {
     println!("  Grok   → xAI direct (x-ai/grok-4)");
     println!("  Kimi   → Moonshot.cn direct (kimi-k2-5)");
     println!("  GLM    → bigmodel.cn direct (glm-5)");
+    println!("  Judge  → Anthropic direct (claude-opus-4-6)");
 }
 
 fn glm_model_name(council: &[ModelEntry]) -> &str {

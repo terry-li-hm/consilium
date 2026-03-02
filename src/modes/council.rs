@@ -1,6 +1,6 @@
 //! Full council deliberation mode: blind phase, debate rounds, judge synthesis, CollabEval.
 
-use crate::api::{query_model, query_model_async, run_parallel};
+use crate::api::{query_judge, query_model, query_model_async, run_parallel};
 use crate::config::{
     detect_consensus, detect_social_context, is_error_response, parse_confidence,
     resolved_judge_model, sanitize_speaker_content, CostTracker, Message, ModelEntry,
@@ -1137,7 +1137,7 @@ pub async fn run_council(
         let _ = output.begin_participant(&format!("Judge ({judge_name})"));
         let _ = output.write_str(&format!("### Judge ({judge_name})\n"));
 
-        let mut judge_response = query_model(
+        let mut judge_response = query_judge(
             &client,
             api_key,
             judge_model.as_str(),
@@ -1220,7 +1220,7 @@ pub async fn run_council(
                     "An independent critic has reviewed your synthesis:\n\n{critique_response}\n\nRevise your synthesis considering this critique. Keep what's right, fix what's wrong. If the critique raises valid points, integrate them. If not, explain briefly why you stand by your original position. Output your FINAL revised synthesis in the same format."
                 )));
 
-                let final_response = query_model(
+                let final_response = query_judge(
                     &client,
                     api_key,
                     judge_model.as_str(),

@@ -2,7 +2,7 @@
 
 use crate::config::{
     is_thinking_model, CostTracker, Message, ModelEntry, BIGMODEL_URL, GOOGLE_AI_STUDIO_URL,
-    MOONSHOT_URL, OPENAI_URL, OPENROUTER_URL, XAI_URL,
+    ANTHROPIC_URL, ANTHROPIC_VERSION, MOONSHOT_URL, OPENAI_URL, OPENROUTER_URL, XAI_URL,
 };
 use crate::session::Output;
 use futures_util::StreamExt;
@@ -12,6 +12,30 @@ use serde_json::Value;
 use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::time::sleep;
+
+/// Query the judge: try Anthropic direct API first, fall back to OpenRouter.
+/// Reads ANTHROPIC_API_KEY from env directly to avoid threading through all mode signatures.
+pub async fn query_judge(
+    client: &Client,
+    openrouter_api_key: &str,
+    model: &str,
+    messages: &[Message],
+    max_tokens: u32,
+    timeout_secs: f64,
+    retries: u32,
+    cost_tracker: Option<&CostTracker>,
+) -> String {
+    if let Ok(ant_key) = std::env::var("ANTHROPIC_API_KEY") {
+        if !ant_key.trim().is_empty() {
+            let response = query_anthropic(client, &ant_key, model, messages, max_tokens, timeout_secs, retries).await;
+            if !response.starts_with('[') {
+                return response;
+            }
+            // Anthropic direct failed — fall through to OpenRouter
+        }
+    }
+    query_model(client, openrouter_api_key, model, messages, max_tokens, timeout_secs, retries, cost_tracker).await
+}
 
 /// Query a model via OpenRouter with retry logic.
 pub async fn query_model(
@@ -643,6 +667,93 @@ pub async fn query_openai(
     }
 
     format!("[Error: Failed to get response from openai {model}]")
+}
+
+/// Query Anthropic directly (primary for Judge).
+/// Uses Anthropic Messages API format (different from OpenAI-compatible providers).
+/// Model name should be bare (e.g. "claude-opus-4-6"), not prefixed with "anthropic/".
+pub async fn query_anthropic(
+    client: &Client,
+    api_key: &str,
+    model: &str,
+    messages: &[Message],
+    max_tokens: u32,
+    timeout_secs: f64,
+    retries: u32,
+) -> String {
+    // Strip "anthropic/" prefix if present (OpenRouter format → bare model name)
+    let model = model.strip_prefix("anthropic/").unwrap_or(model);
+
+    for attempt in 0..=retries {
+        if attempt > 0 {
+            let backoff = (2u64.pow(attempt)) as f64 + rand::random::<f64>();
+            sleep(Duration::from_secs_f64(backoff)).await;
+        }
+
+        let result = client
+            .post(ANTHROPIC_URL)
+            .header("x-api-key", api_key)
+            .header("anthropic-version", ANTHROPIC_VERSION)
+            .header("content-type", "application/json")
+            .timeout(Duration::from_secs_f64(timeout_secs))
+            .json(&serde_json::json!({
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+            }))
+            .send()
+            .await;
+
+        let response = match result {
+            Ok(r) => r,
+            Err(_) if attempt < retries => continue,
+            Err(e) => return format!("[Error: Connection failed for anthropic {model}: {e}]"),
+        };
+
+        if response.status() != 200 {
+            if attempt < retries {
+                continue;
+            }
+            return format!("[Error: HTTP {} from anthropic {model}]", response.status());
+        }
+
+        let data: Value = match response.json().await {
+            Ok(d) => d,
+            Err(_) if attempt < retries => continue,
+            Err(_) => return format!("[Error: Invalid JSON response from anthropic {model}]"),
+        };
+
+        if let Some(err) = data.get("error") {
+            if attempt < retries {
+                continue;
+            }
+            let msg = err
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("Unknown error");
+            return format!("[Error: {msg}]");
+        }
+
+        // Anthropic response: {"content": [{"type": "text", "text": "..."}], ...}
+        let content = data
+            .get("content")
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.iter().find(|b| b.get("type").and_then(|t| t.as_str()) == Some("text")))
+            .and_then(|b| b.get("text"))
+            .and_then(|t| t.as_str())
+            .unwrap_or("");
+
+        if content.trim().is_empty() {
+            if attempt < retries {
+                continue;
+            }
+            return format!("[No response from anthropic {model} after {} attempts]", retries + 1);
+        }
+
+        return strip_think_blocks(content);
+    }
+
+    format!("[Error: Failed to get response from anthropic {model}]")
 }
 
 /// Query a model with streaming output — prints tokens as they arrive.

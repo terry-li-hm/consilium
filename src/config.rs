@@ -27,6 +27,8 @@ pub const BIGMODEL_URL: &str = "https://open.bigmodel.cn/api/paas/v4/chat/comple
 pub const MOONSHOT_URL: &str = "https://api.moonshot.cn/v1/chat/completions";
 pub const XAI_URL: &str = "https://api.x.ai/v1/chat/completions";
 pub const OPENAI_URL: &str = "https://api.openai.com/v1/chat/completions";
+pub const ANTHROPIC_URL: &str = "https://api.anthropic.com/v1/messages";
+pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 
 // Council: 5 panelists (Claude is judge-only to avoid conflict of interest)
 pub const COUNCIL: &[ModelEntry] = &[
