@@ -649,6 +649,26 @@ pub async fn query_model_with_fallback(
         }
     }
 
+    // For Gemini: try Google AI Studio directly first
+    if let Some(("google", google_model)) = fallback {
+        if let Some(gapi_key) = google_api_key {
+            let primary_response = query_google_ai_studio(
+                client,
+                gapi_key,
+                google_model,
+                messages,
+                max_tokens,
+                300.0,
+                retries,
+            )
+            .await;
+            if !primary_response.starts_with('[') {
+                return (name.to_string(), google_model.to_string(), primary_response);
+            }
+            // Google AI Studio failed — fall through to OpenRouter
+        }
+    }
+
     let response = query_model(
         client,
         api_key,
@@ -664,23 +684,6 @@ pub async fn query_model_with_fallback(
     // If OpenRouter succeeded, return
     if !response.starts_with('[') {
         return (name.to_string(), model_name, response);
-    }
-
-    // Try fallback (Google AI Studio)
-    if let Some(("google", fallback_model)) = fallback {
-        if let Some(gapi_key) = google_api_key {
-            let fb_response = query_google_ai_studio(
-                client,
-                gapi_key,
-                fallback_model,
-                messages,
-                max_tokens,
-                300.0,
-                retries,
-            )
-            .await;
-            return (name.to_string(), fallback_model.to_string(), fb_response);
-        }
     }
 
     // Try fallback (Moonshot.cn direct API)
