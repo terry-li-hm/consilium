@@ -23,7 +23,7 @@ pub type ModelEntry = (
 
 pub const OPENROUTER_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 pub const GOOGLE_AI_STUDIO_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
-pub const BIGMODEL_URL: &str = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+pub const BIGMODEL_URL: &str = "https://api.z.ai/api/paas/v4/chat/completions";
 pub const MOONSHOT_URL: &str = "https://api.moonshot.ai/v1/chat/completions";
 pub const XAI_URL: &str = "https://api.x.ai/v1/chat/completions";
 pub const OPENAI_URL: &str = "https://api.openai.com/v1/chat/completions";
