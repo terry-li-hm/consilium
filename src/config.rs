@@ -53,11 +53,16 @@ pub const CRITIQUE_MODEL: &str = "google/gemini-3.1-pro-preview";
 pub const CLASSIFIER_MODEL: &str = "anthropic/claude-opus-4-6"; // same as judge
 pub const EXTRACTION_MODEL: &str = "anthropic/claude-haiku-4-5";
 
-pub const CONSILIUM_MODEL_GPT_ENV: &str = "CONSILIUM_MODEL_GPT";
-pub const CONSILIUM_MODEL_GEMINI_ENV: &str = "CONSILIUM_MODEL_GEMINI";
-pub const CONSILIUM_MODEL_GROK_ENV: &str = "CONSILIUM_MODEL_GROK";
-pub const CONSILIUM_MODEL_KIMI_ENV: &str = "CONSILIUM_MODEL_DEEPSEEK";
-pub const CONSILIUM_MODEL_GLM_ENV: &str = "CONSILIUM_MODEL_GLM";
+pub const CONSILIUM_MODEL_M1_ENV: &str = "CONSILIUM_MODEL_M1";
+pub const CONSILIUM_MODEL_M2_ENV: &str = "CONSILIUM_MODEL_M2";
+pub const CONSILIUM_MODEL_M3_ENV: &str = "CONSILIUM_MODEL_M3";
+pub const CONSILIUM_MODEL_M4_ENV: &str = "CONSILIUM_MODEL_M4";
+pub const CONSILIUM_MODEL_M5_ENV: &str = "CONSILIUM_MODEL_M5";
+pub const CONSILIUM_MODEL_GPT_ENV: &str = CONSILIUM_MODEL_M1_ENV;
+pub const CONSILIUM_MODEL_GEMINI_ENV: &str = CONSILIUM_MODEL_M2_ENV;
+pub const CONSILIUM_MODEL_GROK_ENV: &str = CONSILIUM_MODEL_M3_ENV;
+pub const CONSILIUM_MODEL_KIMI_ENV: &str = CONSILIUM_MODEL_M4_ENV;
+pub const CONSILIUM_MODEL_GLM_ENV: &str = CONSILIUM_MODEL_M5_ENV;
 pub const CONSILIUM_MODEL_JUDGE_ENV: &str = "CONSILIUM_MODEL_JUDGE";
 pub const CONSILIUM_MODEL_CRITIQUE_ENV: &str = "CONSILIUM_MODEL_CRITIQUE";
 pub const GLM_MAX_TOKENS_ENV: &str = "GLM_MAX_TOKENS";
@@ -81,41 +86,74 @@ fn leak_if_needed(value: String, default: &'static str) -> &'static str {
     }
 }
 
+fn display_name_from_model(model_id: &str) -> String {
+    let model_name = model_id.split('/').next_back().unwrap_or(model_id);
+    let model_name = model_name.strip_suffix("-preview").unwrap_or(model_name);
+
+    model_name
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .map(|part| match part.to_ascii_lowercase().as_str() {
+            "gpt" => "GPT".to_string(),
+            "glm" => "GLM".to_string(),
+            "deepseek" => "DeepSeek".to_string(),
+            _ => {
+                let mut chars = part.chars();
+                match chars.next() {
+                    Some(first) => {
+                        let mut segment = String::new();
+                        segment.extend(first.to_uppercase());
+                        segment.push_str(chars.as_str());
+                        segment
+                    }
+                    None => String::new(),
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
 /// Resolve council models at runtime, applying env var overrides.
 pub fn resolved_council() -> Vec<ModelEntry> {
-    let gpt_model = env_override(CONSILIUM_MODEL_GPT_ENV)
+    let model_1 = env_override(CONSILIUM_MODEL_M1_ENV)
         .map(|v| leak_if_needed(v, "openai/gpt-5.2-pro"))
         .unwrap_or("openai/gpt-5.2-pro");
+    let model_1_name = leak_if_needed(display_name_from_model(model_1), "GPT-5.2-Pro");
 
-    let gemini_override = env_override(CONSILIUM_MODEL_GEMINI_ENV);
-    let gemini_model = gemini_override
+    let model_2_override = env_override(CONSILIUM_MODEL_M2_ENV);
+    let model_2 = model_2_override
         .as_ref()
         .map(|v| leak_if_needed(v.clone(), "google/gemini-3.1-pro-preview"))
         .unwrap_or("google/gemini-3.1-pro-preview");
-    let gemini_fallback = gemini_override
+    let model_2_name = leak_if_needed(display_name_from_model(model_2), "Gemini-3.1-Pro");
+    let model_2_fallback = model_2_override
         .as_ref()
         .map(|v| v.strip_prefix("google/").unwrap_or(v.as_str()).to_string())
         .map(|v| leak_if_needed(v, "gemini-3.1-pro-preview"))
         .unwrap_or("gemini-3.1-pro-preview");
 
-    let grok_model = env_override(CONSILIUM_MODEL_GROK_ENV)
+    let model_3 = env_override(CONSILIUM_MODEL_M3_ENV)
         .map(|v| leak_if_needed(v, "x-ai/grok-4"))
         .unwrap_or("x-ai/grok-4");
+    let model_3_name = leak_if_needed(display_name_from_model(model_3), "Grok-4");
 
-    let deepseek_model = env_override(CONSILIUM_MODEL_KIMI_ENV)
+    let model_4 = env_override(CONSILIUM_MODEL_M4_ENV)
         .map(|v| leak_if_needed(v, "deepseek/deepseek-v3.2"))
         .unwrap_or("deepseek/deepseek-v3.2");
+    let model_4_name = leak_if_needed(display_name_from_model(model_4), "DeepSeek-V3.2");
 
-    let glm_fallback = env_override(CONSILIUM_MODEL_GLM_ENV)
+    let model_5_fallback = env_override(CONSILIUM_MODEL_M5_ENV)
         .map(|v| leak_if_needed(v, "glm-5"))
         .unwrap_or("glm-5");
+    let model_5_name = leak_if_needed(display_name_from_model("z-ai/glm-5"), "GLM-5");
 
     vec![
-        ("GPT", gpt_model, Some(("openai", "gpt-5.2-pro"))),
-        ("Gemini", gemini_model, Some(("google", gemini_fallback))),
-        ("Grok", grok_model, Some(("xai", "grok-4"))),
-        ("DeepSeek", deepseek_model, None),
-        ("GLM", "z-ai/glm-5", Some(("zhipu", glm_fallback))),
+        (model_1_name, model_1, Some(("openai", "gpt-5.2-pro"))),
+        (model_2_name, model_2, Some(("google", model_2_fallback))),
+        (model_3_name, model_3, Some(("xai", "grok-4"))),
+        (model_4_name, model_4, None),
+        (model_5_name, "z-ai/glm-5", Some(("zhipu", model_5_fallback))),
     ]
 }
 
@@ -419,6 +457,24 @@ impl Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_display_name_from_model_examples() {
+        assert_eq!(
+            display_name_from_model("openai/gpt-5.2-pro"),
+            "GPT-5.2-Pro"
+        );
+        assert_eq!(
+            display_name_from_model("deepseek/deepseek-v3.2"),
+            "DeepSeek-V3.2"
+        );
+        assert_eq!(
+            display_name_from_model("google/gemini-3.1-pro-preview"),
+            "Gemini-3.1-Pro"
+        );
+        assert_eq!(display_name_from_model("x-ai/grok-4"), "Grok-4");
+        assert_eq!(display_name_from_model("z-ai/glm-5"), "GLM-5");
+    }
 
     // --- is_thinking_model ---
 

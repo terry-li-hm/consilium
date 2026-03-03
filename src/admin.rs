@@ -1,8 +1,7 @@
 use crate::config::{
-    resolved_council, resolved_judge_model, ModelEntry, CONSILIUM_MODEL_KIMI_ENV,
-    CONSILIUM_MODEL_GEMINI_ENV, CONSILIUM_MODEL_GLM_ENV, CONSILIUM_MODEL_GPT_ENV,
-    CONSILIUM_MODEL_GROK_ENV,
-    CONSILIUM_MODEL_JUDGE_ENV,
+    resolved_council, resolved_judge_model, ModelEntry, CONSILIUM_MODEL_M1_ENV,
+    CONSILIUM_MODEL_M2_ENV, CONSILIUM_MODEL_M3_ENV, CONSILIUM_MODEL_M4_ENV,
+    CONSILIUM_MODEL_M5_ENV, CONSILIUM_MODEL_JUDGE_ENV,
 };
 use crate::session::get_sessions_dir;
 use chrono::{DateTime, Local};
@@ -377,33 +376,30 @@ pub fn doctor() {
     let council = resolved_council();
     let judge = resolved_judge_model();
 
-    let gpt_source = env_source(CONSILIUM_MODEL_GPT_ENV);
-    let gemini_source = env_source(CONSILIUM_MODEL_GEMINI_ENV);
-    let grok_source = env_source(CONSILIUM_MODEL_GROK_ENV);
-    let kimi_source = env_source(CONSILIUM_MODEL_KIMI_ENV);
-    let glm_source = env_source(CONSILIUM_MODEL_GLM_ENV);
+    let m1_source = env_source(CONSILIUM_MODEL_M1_ENV);
+    let m2_source = env_source(CONSILIUM_MODEL_M2_ENV);
+    let m3_source = env_source(CONSILIUM_MODEL_M3_ENV);
+    let m4_source = env_source(CONSILIUM_MODEL_M4_ENV);
+    let m5_source = env_source(CONSILIUM_MODEL_M5_ENV);
     let judge_source = env_source(CONSILIUM_MODEL_JUDGE_ENV);
 
     let gemini_fallback = council
         .iter()
-        .find(|(name, _, _)| *name == "Gemini")
+        .find(|(_, _, fallback)| fallback.map(|(p, _)| p).unwrap_or("") == "google")
         .and_then(|(_, _, fallback)| *fallback)
         .map(|(_, model)| model)
-        .unwrap_or("gemini-2.5-pro");
+        .unwrap_or("gemini-3.1-pro-preview");
 
     println!("consilium doctor");
     println!("═══════════════════════════════════════");
     println!();
     println!("Council models:");
-    println!("  {:<10} {:<35} ({})", "GPT", council[0].1, gpt_source);
-    println!(
-        "  {:<10} {:<35} ({})",
-        "Gemini", council[1].1, gemini_source
-    );
-    println!("  {:<10} {:<35} ({})", "Grok", council[2].1, grok_source);
-    println!("  {:<10} {:<35} ({})", "Kimi", council[3].1, kimi_source);
-    println!("  {:<10} {:<35} ({})", "GLM", glm_model_name(&council), glm_source);
-    println!("  {:<10} {:<35} ({})", "Judge", judge, judge_source);
+    println!("  {:<14} {:<35} ({})", council[0].0, council[0].1, m1_source);
+    println!("  {:<14} {:<35} ({})", council[1].0, council[1].1, m2_source);
+    println!("  {:<14} {:<35} ({})", council[2].0, council[2].1, m3_source);
+    println!("  {:<14} {:<35} ({})", council[3].0, council[3].1, m4_source);
+    println!("  {:<14} {:<35} ({})", council[4].0, glm_model_name(&council), m5_source);
+    println!("  {:<14} {:<35} ({})", "Judge", judge, judge_source);
     println!();
     println!("API keys:");
     println!(
@@ -419,12 +415,12 @@ pub fn doctor() {
     println!("  {:<20} {}", "MOONSHOT_API_KEY", key_marker("MOONSHOT_API_KEY"));
     println!();
     println!("Fallbacks (native API → OpenRouter):");
-    println!("  GPT    → OpenAI direct (openai/gpt-5.2-pro)");
-    println!("  Gemini → Google AI Studio (google/{gemini_fallback})");
-    println!("  Grok   → xAI direct (x-ai/grok-4)");
-    println!("  Kimi   → Moonshot.cn direct (kimi-k2-5)");
-    println!("  GLM    → bigmodel.cn direct (glm-5)");
-    println!("  Judge  → Anthropic direct (claude-opus-4-6)");
+    println!("  {}  → OpenAI direct (openai/gpt-5.2-pro)", council[0].0);
+    println!("  {}  → Google AI Studio (google/{gemini_fallback})", council[1].0);
+    println!("  {}    → xAI direct (x-ai/grok-4)", council[2].0);
+    println!("  {} → no native fallback (OpenRouter only)", council[3].0);
+    println!("  {}     → bigmodel.cn direct (glm-5)", council[4].0);
+    println!("  Judge         → Anthropic direct (claude-opus-4-6)");
 }
 
 fn glm_model_name(council: &[ModelEntry]) -> &str {
