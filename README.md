@@ -15,21 +15,33 @@ Auto-routes by difficulty: simple questions get quick parallel queries (~$0.10),
 
 ## Why multi-model?
 
-Research shows multi-model collaboration produces **18.5% better outcomes** than any single model working alone, through a mechanism called collaborative emergence — models surface insights that no individual model would reach. consilium's structured deliberation (blind → debate → judge) is designed to maximize this effect.
+Multi-model collaboration produces better outcomes than any single model — but naive "ask multiple models and vote" fails. Most of the benefit from debate comes from majority voting alone; the iterative discussion is a [martingale](https://openreview.net/forum?id=iUjGNJzrF1) that doesn't improve expected correctness without targeted interventions. consilium implements those interventions:
 
-Paper: [Model Collaboration](https://arxiv.org/html/2601.21257v1) (Feng et al., 2025)
+| Design principle | What it prevents | Evidence |
+|---|---|---|
+| Cross-lab panel (5 labs) | Shared training misconceptions reinforcing wrong answers | [ReConcile, ACL 2024](https://arxiv.org/html/2309.13007v3) — +11.4% over homogeneous MAD |
+| Blind first phase | Identity/authority anchoring (Compassion-Fade bias) | [CALM, 2024](https://llm-judge-bias.github.io/) |
+| Anonymous labels (Speaker 1/2/3) | Judge favoring named model outputs | [IBC paper, 2024](https://arxiv.org/html/2510.07517v1) — conformity > obstinacy when identity known |
+| Rotating challenger | Sycophancy cascades; models converging to majority | [DEBATE, ACL 2024](https://aclanthology.org/2024.findings-acl.112/) |
+| Anti-capitulation prompt | Position changes without new evidence | [Peacemaker/Troublemaker, 2024](https://arxiv.org/html/2509.23055v1) — r=0.902 sycophancy↔wrong answer |
+| 1–2 round cap | Sycophancy intensifies at round 3+ | [Peacemaker/Troublemaker, 2024](https://arxiv.org/html/2509.23055v1) |
+| Judge outside panelist pool | Self-Enhancement (judge favoring same-lab outputs) | [CALM, 2024](https://llm-judge-bias.github.io/) |
+| Confidence extraction for judge | Equal-weighting confident and uncertain positions | [ReConcile, ACL 2024](https://arxiv.org/html/2309.13007v3) |
+| Gemini critique + judge revision | Fallacy-Oversight (worst judge bias, 0.566 score) | [CALM, 2024](https://llm-judge-bias.github.io/) |
 
 ## Models
 
-| Role | Model |
-|------|-------|
-| Panelist | GPT-5.2 Pro |
-| Panelist | Gemini 3.1 Pro |
-| Panelist | Grok 4 |
-| Panelist | DeepSeek-R1 |
-| Panelist | GLM-5 |
-| Judge | Claude Opus 4.6 |
-| Critique | Gemini 3.1 Pro |
+| Role | Model | Lab |
+|------|-------|-----|
+| Panelist | GPT-5.2 Pro | OpenAI |
+| Panelist | Gemini 3.1 Pro | Google |
+| Panelist | Grok 4 | xAI |
+| Panelist | Kimi K2.5 | Moonshot |
+| Panelist | GLM-5 | Zhipu |
+| Judge | Claude Opus 4.6 | Anthropic |
+| Critique | Gemini 3.1 Pro | Google |
+
+5 distinct labs on the panel. The judge (Anthropic) is not in the panelist pool.
 
 ## Install
 

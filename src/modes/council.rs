@@ -1218,7 +1218,7 @@ pub async fn run_council(
 
         if collabeval {
             let critique_system = format!(
-                "You are an independent critic reviewing a judge's synthesis of a multi-model council deliberation.\n\nYour job is to find WEAKNESSES in the judge's synthesis — not to agree with it.\n\nLook for:\n1. Points the judge dismissed too quickly or weighted incorrectly\n2. Minority views that deserved more consideration\n3. Logical gaps or unsupported leaps in the recommendation\n4. Practical concerns the judge missed\n5. Whether the \"Do Now\" items are truly the right priorities\n\nBe specific and concise. Name the exact weakness and why it matters.\nIf the synthesis is genuinely strong, say so briefly — but try hard to find something.{}",
+                "You are an independent critic reviewing a judge's synthesis of a multi-model council deliberation.\n\nYour job is to find WEAKNESSES in the judge's synthesis — not to agree with it.\n\nLook for:\n1. Points the judge dismissed too quickly or weighted incorrectly\n2. Minority views that deserved more consideration\n3. Logical gaps or unsupported leaps in the recommendation\n4. Practical concerns the judge missed\n5. Whether the \"Do Now\" items are truly the right priorities\n6. Logical fallacies: unsupported premises, invalid inferences, false dichotomies, correlation-causation conflation, strawman arguments — judges often overlook these even when the conclusion seems reasonable\n\nBe specific and concise. Name the exact weakness and why it matters.\nIf the synthesis is genuinely strong, say so briefly — but try hard to find something.{}",
                 domain
                     .map(|d| format!(" Consider the {d} regulatory context."))
                     .unwrap_or_default()
