@@ -46,7 +46,7 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 | `api.rs` | 1428 | HTTP clients, SSE streaming, parallel queries, retry, fallback |
 | `prompts.rs` | 719 | All prompt templates (verbatim port from Python) |
 | `session.rs` | 821 | Output trait + CompactTeeOutput, LiveWriter, session save/share/history |
-| `modes/council.rs` | 1466 | Full council deliberation |
+| `modes/council.rs` | 1471 | Full council deliberation |
 | `modes/discuss.rs` | 504 | Roundtable + socratic |
 | `modes/oxford.rs` | 318 | Oxford debate |
 | `modes/quick.rs` | 371 | Parallel streaming |
@@ -56,8 +56,8 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 | `admin.rs` | 451 | Stats, sessions, view, search |
 | `tui.rs` | 433 | Ratatui TUI (Flexoki dark) |
 | `watch.rs` | 275 | Crossterm live watcher |
-| `cli.rs` | 191 | Clap derive struct (~30 flags) |
-| `main.rs` | 308 | Entry point + mode dispatch |
+| `cli.rs` | 195 | Clap derive struct (~30 flags) |
+| `main.rs` | 317 | Entry point + mode dispatch |
 
 ## Testing
 

@@ -1130,6 +1130,19 @@ pub async fn run_council(
         }
     };
 
+    let blind_convergence_note = if !blind_context.is_empty() {
+        let valid_blind_count = blind_claims
+            .iter()
+            .filter(|(_, _, text)| !is_error_response(text))
+            .count();
+        format!(
+            "\n\n[Blind phase: {valid_blind_count}/{} models responded independently before seeing peers]",
+            blind_claims.len()
+        )
+    } else {
+        String::new()
+    };
+
     if valid_conversation.len() < conversation.len() {
         let failed_count = conversation.len() - valid_conversation.len();
         deliberation_text.push_str(&format!(
@@ -1137,18 +1150,10 @@ pub async fn run_council(
         ));
     }
 
-    // Build blind-phase section for judge: raw claims + respondent count.
-    // blind_context contains the formatted claims; blind_claims has the raw tuples for counting.
     let blind_section = if !blind_context.is_empty() {
-        let valid_blind_count = blind_claims
-            .iter()
-            .filter(|(_, _, text)| !is_error_response(text))
-            .count();
-        let note = format!(
-            "\n\n[Blind phase: {valid_blind_count}/{} models responded independently before seeing peers — positions matching their final debate stance were held without social pressure]",
-            blind_claims.len()
-        );
-        format!("BLIND CLAIMS (independent positions before debate):\n\n{blind_context}{note}\n\n---\n\n")
+        format!(
+            "BLIND CLAIMS (independent positions before debate):\n\n{blind_context}{blind_convergence_note}\n\n---\n\n"
+        )
     } else {
         String::new()
     };
@@ -1207,7 +1212,7 @@ pub async fn run_council(
         };
 
         let judge_system = format!(
-            "You are the Judge (Claude), responsible for synthesizing the council's deliberation.{context_hint}{domain_hint_text}\n\nYou did NOT participate in the deliberation — you're seeing it fresh. This gives you objectivity.\n\nSYNTHESIS METHOD — Analysis of Competing Hypotheses:\nRather than seeking the consensus view, first list ALL plausible conclusions from the deliberation (typically 2-4). For each piece of evidence or argument raised by the council, evaluate how well it supports or undermines EACH hypothesis. Eliminate conclusions that are inconsistent with the strongest evidence. The surviving hypothesis is your recommendation.\n\nCONVERGENCE SIGNAL:\nWhen independent agents with different models and training reached the SAME conclusion in the blind phase, treat this as a multiplicatively strong signal — independent agreement from different priors is more reliable than the same conclusion repeated. Push your confidence further toward certainty than a simple average. Compare the BLIND CLAIMS section against each speaker's final debate position: a speaker whose blind claim matches their post-debate stance held it under no social pressure (strong); a speaker whose final position diverged from their blind claim may have been sycophantically influenced (discount).\n\nSYCOPHANCY CHECK:\nFlag any agent that changed position during debate WITHOUT citing a specific new argument or piece of evidence. Position changes labeled POSITION CHANGE with clear reasoning are healthy. Unlabeled shifts toward consensus are sycophancy — discount these.\n\nAfter applying this method, structure your response as:\n\n## Competing Hypotheses\n[List 2-4 plausible conclusions. For each, note which council arguments support/undermine it]\n\n## Points of Agreement\n[What the council agrees on — and whether that consensus should be trusted given the sycophancy check]\n\n## Points of Disagreement\n[Where views genuinely diverged and why — these often point to the crux]\n\n## Judge's Own Take\n[Your independent perspective. What did the council miss or underweight?]\n\n## Synthesis\n[The integrated perspective, combining council views with your own ACH analysis]\n\n## Recommendation\n[Your final recommendation]{social_judge_section}\nBe balanced and fair. Acknowledge minority views if valid. END with three clear sections: **Do Now** (MAX 3 items, argue against each first), **Consider Later**, and **Skip** (with reasons)."
+            "You are the Judge (Claude), responsible for synthesizing the council's deliberation.{context_hint}{domain_hint_text}\n\nYou did NOT participate in the deliberation — you're seeing it fresh. This gives you objectivity.\n\nSYNTHESIS METHOD — Analysis of Competing Hypotheses:\nRather than seeking the consensus view, first list ALL plausible conclusions from the deliberation (typically 2-4). For each piece of evidence or argument raised by the council, evaluate how well it supports or undermines EACH hypothesis. Eliminate conclusions that are inconsistent with the strongest evidence. The surviving hypothesis is your recommendation.\n\nCONVERGENCE SIGNAL:\nWhen independent agents with different models and training reached the SAME conclusion in the blind phase, treat this as a multiplicatively strong signal — independent agreement from different priors is more reliable than the same conclusion repeated. Push your confidence further toward certainty than a simple average — compare the BLIND CLAIMS section above against each speaker's final debate position. A speaker whose blind claim matches their final position held it independently under no social pressure; a speaker whose final position diverged from their blind claim may have been sycophantically influenced.\n\nSYCOPHANCY CHECK:\nFlag any agent that changed position during debate WITHOUT citing a specific new argument or piece of evidence. Position changes labeled POSITION CHANGE with clear reasoning are healthy. Unlabeled shifts toward consensus are sycophancy — discount these.\n\nAfter applying this method, structure your response as:\n\n## Competing Hypotheses\n[List 2-4 plausible conclusions. For each, note which council arguments support/undermine it]\n\n## Points of Agreement\n[What the council agrees on — and whether that consensus should be trusted given the sycophancy check]\n\n## Points of Disagreement\n[Where views genuinely diverged and why — these often point to the crux]\n\n## Judge's Own Take\n[Your independent perspective. What did the council miss or underweight?]\n\n## Synthesis\n[The integrated perspective, combining council views with your own ACH analysis]\n\n## Recommendation\n[Your final recommendation]{social_judge_section}\nBe balanced and fair. Acknowledge minority views if valid. END with three clear sections: **Do Now** (MAX 3 items, argue against each first), **Consider Later**, and **Skip** (with reasons)."
         );
 
         let judge_messages = vec![

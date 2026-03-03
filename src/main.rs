@@ -77,10 +77,19 @@ async fn main() {
         std::process::exit(0);
     }
 
-    let question = match &args.question {
-        Some(q) => q.clone(),
-        None => {
-            eprintln!("Error: question is required (or use an admin command like --stats)");
+    let question = match (&args.question, &args.prompt_file) {
+        (Some(q), _) => q.clone(),
+        (None, Some(path)) => std::fs::read_to_string(path)
+            .unwrap_or_else(|e| {
+                eprintln!("Error: could not read prompt file {}: {}", path.display(), e);
+                std::process::exit(1);
+            })
+            .trim()
+            .to_string(),
+        (None, None) => {
+            eprintln!(
+                "Error: question is required (or use --prompt-file FILE, or use an admin command like --stats)"
+            );
             std::process::exit(1);
         }
     };

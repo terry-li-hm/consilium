@@ -13,6 +13,10 @@ pub struct Cli {
     /// The question or topic to deliberate on
     pub question: Option<String>,
 
+    /// Read question from file instead of positional arg (avoids shell quoting issues)
+    #[arg(long, value_name = "FILE", help_heading = "Context")]
+    pub prompt_file: Option<std::path::PathBuf>,
+
     // --- Mode flags (mutually exclusive by convention, validated in main) ---
     /// Quick parallel query (all models answer independently)
     #[arg(long, help_heading = "Core Modes")]
