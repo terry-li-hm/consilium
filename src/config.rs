@@ -32,7 +32,7 @@ pub const OPENAI_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 pub const ANTHROPIC_URL: &str = "https://api.anthropic.com/v1/messages";
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 
-// Council: 5 panelists (Claude is judge-only to avoid conflict of interest)
+// Council: 5 panelists (Gemini is judge; Claude is M2 panelist + critique)
 // Fallback routing based on HK latency benchmark (2026-03-04):
 //   GPT: None — gpt-5.2-pro returns 404 on OpenAI chat/completions (not a chat model)
 //   Gemini: None — OR (5.0s) is faster than Google AI Studio direct (8.3s) from HK
@@ -47,10 +47,10 @@ pub const COUNCIL: &[ModelEntry] = &[
     ("GLM", "z-ai/glm-5", Some(("zhipu", "glm-5"))),
 ];
 
-pub const JUDGE_MODEL: &str = "anthropic/claude-opus-4-6";
+pub const JUDGE_MODEL: &str = "google/gemini-3.1-pro-preview";
 pub const COMPRESSION_MODEL: &str = "meta-llama/llama-3.3-70b-instruct";
-pub const CRITIQUE_MODEL: &str = "google/gemini-3.1-pro-preview";
-pub const CLASSIFIER_MODEL: &str = "anthropic/claude-opus-4-6"; // same as judge
+pub const CRITIQUE_MODEL: &str = "anthropic/claude-opus-4-6";
+pub const CLASSIFIER_MODEL: &str = "anthropic/claude-opus-4-6"; // stable classifier
 pub const EXTRACTION_MODEL: &str = "anthropic/claude-haiku-4-5";
 
 pub const CONSILIUM_MODEL_M1_ENV: &str = "CONSILIUM_MODEL_M1";
@@ -122,9 +122,9 @@ pub fn resolved_council() -> Vec<ModelEntry> {
     let model_1_name = leak_if_needed(display_name_from_model(model_1), "GPT-5.2-Pro");
 
     let model_2 = env_override(CONSILIUM_MODEL_M2_ENV)
-        .map(|v| leak_if_needed(v, "google/gemini-3.1-pro-preview"))
-        .unwrap_or("google/gemini-3.1-pro-preview");
-    let model_2_name = leak_if_needed(display_name_from_model(model_2), "Gemini-3.1-Pro");
+        .map(|v| leak_if_needed(v, "anthropic/claude-opus-4-6"))
+        .unwrap_or("anthropic/claude-opus-4-6");
+    let model_2_name = leak_if_needed(display_name_from_model(model_2), "Claude-Opus-4-6");
 
     let model_3 = env_override(CONSILIUM_MODEL_M3_ENV)
         .map(|v| leak_if_needed(v, "x-ai/grok-4"))
@@ -143,7 +143,7 @@ pub fn resolved_council() -> Vec<ModelEntry> {
 
     vec![
         (model_1_name, model_1, Some(("openai", "gpt-5.2-pro"))), // Responses API direct ~1.6s vs OR 4.0s
-        (model_2_name, model_2, None), // OR only: OR 5.0s vs direct 8.3s from HK
+        (model_2_name, model_2, Some(("anthropic", "claude-opus-4-6"))),
         (model_3_name, model_3, Some(("xai", "grok-4"))),
         (model_4_name, model_4, Some(("moonshot", "kimi-k2.5"))),
         (model_5_name, "z-ai/glm-5", Some(("zhipu", model_5_fallback))),
@@ -160,12 +160,20 @@ pub fn resolved_critique_model() -> String {
     env_override(CONSILIUM_MODEL_CRITIQUE_ENV).unwrap_or_else(|| CRITIQUE_MODEL.to_string())
 }
 
-/// Quick mode: council + Claude (no judge conflict in quick mode).
+/// Quick mode: council + Judge (no judge conflict in quick mode).
 pub fn quick_models() -> Vec<ModelEntry> {
     let judge = resolved_judge_model();
-    let judge = leak_if_needed(judge, JUDGE_MODEL);
-    let mut models: Vec<ModelEntry> = vec![("Claude", judge, None)];
-    models.extend(resolved_council());
+    let judge_label = display_name_from_model(&judge);
+    let judge_label = leak_if_needed(judge_label, "Judge");
+    let judge_id = leak_if_needed(judge, JUDGE_MODEL);
+    let mut models: Vec<ModelEntry> = vec![(judge_label, judge_id, None)];
+
+    // Filter judge model out of resolved_council() to prevent duplication
+    models.extend(
+        resolved_council()
+            .into_iter()
+            .filter(|(_, m, _)| *m != judge_id),
+    );
     models
 }
 

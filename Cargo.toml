@@ -9,6 +9,8 @@ homepage = "https://consilium.sh"
 keywords = ["llm", "deliberation", "cli", "ai", "multi-model"]
 categories = ["command-line-utilities"]
 
+[workspace]
+
 [[bin]]
 name = "consilium"
 path = "src/main.rs"

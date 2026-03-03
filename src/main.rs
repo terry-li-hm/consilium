@@ -111,6 +111,7 @@ async fn main() {
     let moonshot_api_key = std::env::var("MOONSHOT_API_KEY").ok();
     let xai_api_key = std::env::var("XAI_API_KEY").ok();
     let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
+    let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY").ok();
 
     let client = reqwest::Client::new();
     let mode = if let Some(explicit) = args.explicit_mode() {
@@ -151,6 +152,7 @@ async fn main() {
                 moonshot_api_key.as_deref(),
                 openai_api_key.as_deref(),
                 xai_api_key.as_deref(),
+                anthropic_api_key.as_deref(),
                 &mut *output,
                 &args.format,
                 args.timeout,
@@ -167,6 +169,7 @@ async fn main() {
                 moonshot_api_key.as_deref(),
                 openai_api_key.as_deref(),
                 xai_api_key.as_deref(),
+                anthropic_api_key.as_deref(),
                 None,
                 &args.format,
                 args.timeout,
@@ -184,6 +187,7 @@ async fn main() {
                 moonshot_api_key.as_deref(),
                 openai_api_key.as_deref(),
                 xai_api_key.as_deref(),
+                anthropic_api_key.as_deref(),
                 args.context.clone(),
                 &args.format,
                 args.timeout,
@@ -201,6 +205,7 @@ async fn main() {
                 moonshot_api_key.as_deref(),
                 openai_api_key.as_deref(),
                 xai_api_key.as_deref(),
+                anthropic_api_key.as_deref(),
                 args.context.clone(),
                 &args.format,
                 args.timeout,
@@ -218,6 +223,7 @@ async fn main() {
                 moonshot_api_key.as_deref(),
                 openai_api_key.as_deref(),
                 xai_api_key.as_deref(),
+                anthropic_api_key.as_deref(),
                 args.context.clone(),
                 &args.format,
                 args.timeout,
@@ -235,6 +241,7 @@ async fn main() {
                 moonshot_api_key.as_deref(),
                 openai_api_key.as_deref(),
                 xai_api_key.as_deref(),
+                anthropic_api_key.as_deref(),
                 &mode,
                 args.rounds as u32,
                 args.context.clone(),
@@ -282,6 +289,7 @@ async fn main() {
                 moonshot_api_key.as_deref(),
                 openai_api_key.as_deref(),
                 xai_api_key.as_deref(),
+                anthropic_api_key.as_deref(),
                 rounds,
                 args.timeout,
                 &mut *output,

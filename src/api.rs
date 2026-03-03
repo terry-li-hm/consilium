@@ -14,8 +14,8 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::time::sleep;
 
-/// Query the judge: try Anthropic direct API first, fall back to OpenRouter.
-/// Reads ANTHROPIC_API_KEY from env directly to avoid threading through all mode signatures.
+/// Query the judge: try native direct API first (based on model), fall back to OpenRouter.
+/// Reads API keys from env directly to avoid threading through all mode signatures.
 pub async fn query_judge(
     client: &Client,
     openrouter_api_key: &str,
@@ -26,16 +26,56 @@ pub async fn query_judge(
     retries: u32,
     cost_tracker: Option<&CostTracker>,
 ) -> String {
-    if let Ok(ant_key) = std::env::var("ANTHROPIC_API_KEY") {
-        if !ant_key.trim().is_empty() {
-            let response = query_anthropic(client, &ant_key, model, messages, max_tokens, timeout_secs, retries).await;
-            if !response.starts_with('[') {
-                return response;
+    if model.contains("google/") || model.contains("gemini") {
+        if let Ok(g_key) = std::env::var("GOOGLE_API_KEY") {
+            if !g_key.trim().is_empty() {
+                let bare = model.strip_prefix("google/").unwrap_or(model);
+                let response = query_google_ai_studio(
+                    client,
+                    &g_key,
+                    bare,
+                    messages,
+                    max_tokens,
+                    timeout_secs,
+                    retries,
+                )
+                .await;
+                if !is_error_response(&response) {
+                    return response;
+                }
             }
-            // Anthropic direct failed — fall through to OpenRouter
+        }
+    } else if model.contains("anthropic/") || model.contains("claude") {
+        if let Ok(ant_key) = std::env::var("ANTHROPIC_API_KEY") {
+            if !ant_key.trim().is_empty() {
+                let response = query_anthropic(
+                    client,
+                    &ant_key,
+                    model,
+                    messages,
+                    max_tokens,
+                    timeout_secs,
+                    retries,
+                )
+                .await;
+                if !is_error_response(&response) {
+                    return response;
+                }
+            }
         }
     }
-    query_model(client, openrouter_api_key, model, messages, max_tokens, timeout_secs, retries, cost_tracker).await
+
+    query_model(
+        client,
+        openrouter_api_key,
+        model,
+        messages,
+        max_tokens,
+        timeout_secs,
+        retries,
+        cost_tracker,
+    )
+    .await
 }
 
 /// Query a model via OpenRouter with retry logic.
@@ -930,6 +970,7 @@ pub async fn query_model_with_fallback(
     moonshot_api_key: Option<&str>,
     openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
+    anthropic_api_key: Option<&str>,
     max_tokens: u32,
     timeout_secs: f64,
     retries: u32,
@@ -938,6 +979,27 @@ pub async fn query_model_with_fallback(
     let model_name = model.split('/').next_back().unwrap_or(model).to_string();
     let mut primary_response: Option<String> = None;
     let timeout_secs = timeout_secs.max(if is_thinking_model(model) { 120.0 } else { 60.0 });
+
+    // For Claude: try Anthropic directly first
+    if let Some(("anthropic", anthropic_model)) = fallback {
+        if let Some(ant_key) = anthropic_api_key {
+            let response = query_anthropic(
+                client,
+                ant_key,
+                anthropic_model,
+                messages,
+                max_tokens,
+                timeout_secs,
+                retries,
+            )
+            .await;
+            if !is_error_response(&response) {
+                return (name.to_string(), anthropic_model.to_string(), response);
+            }
+            primary_response = Some(response);
+            // Anthropic failed — fall through to OpenRouter
+        }
+    }
 
     // For GLM: try bigmodel.cn directly first (more reliable than OpenRouter z-ai)
     if let Some(("zhipu", zhipu_model)) = fallback {
@@ -1085,6 +1147,7 @@ pub async fn query_model_async(
     moonshot_api_key: Option<&str>,
     openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
+    anthropic_api_key: Option<&str>,
     max_tokens: u32,
     timeout_secs: f64,
     retries: u32,
@@ -1102,6 +1165,7 @@ pub async fn query_model_async(
         moonshot_api_key,
         openai_api_key,
         xai_api_key,
+        anthropic_api_key,
         max_tokens,
         timeout_secs,
         retries,
@@ -1120,6 +1184,7 @@ pub async fn run_parallel(
     moonshot_api_key: Option<&str>,
     openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
+    anthropic_api_key: Option<&str>,
     max_tokens: u32,
     timeout_secs: f64,
     cost_tracker: Option<&CostTracker>,
@@ -1150,6 +1215,7 @@ pub async fn run_parallel(
             let moonshot_api_key = moonshot_api_key.map(|s| s.to_string());
             let openai_api_key = openai_api_key.map(|s| s.to_string());
             let xai_api_key = xai_api_key.map(|s| s.to_string());
+            let anthropic_api_key = anthropic_api_key.map(|s| s.to_string());
             let messages = messages.to_vec();
             let name = name.to_string();
             let model = model.to_string();
@@ -1173,6 +1239,7 @@ pub async fn run_parallel(
                     moonshot_api_key.as_deref(),
                     openai_api_key.as_deref(),
                     xai_api_key.as_deref(),
+                    anthropic_api_key.as_deref(),
                     max_tokens,
                     timeout_secs,
                     2,
@@ -1224,6 +1291,7 @@ pub async fn run_parallel_with_different_messages(
     moonshot_api_key: Option<&str>,
     openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
+    anthropic_api_key: Option<&str>,
     max_tokens: u32,
     timeout_secs: f64,
     cost_tracker: Option<&CostTracker>,
@@ -1248,6 +1316,7 @@ pub async fn run_parallel_with_different_messages(
             let moonshot_api_key = moonshot_api_key.map(|s| s.to_string());
             let openai_api_key = openai_api_key.map(|s| s.to_string());
             let xai_api_key = xai_api_key.map(|s| s.to_string());
+            let anthropic_api_key = anthropic_api_key.map(|s| s.to_string());
             let messages = messages.to_vec();
             let name = name.to_string();
             let model = model.to_string();
@@ -1271,6 +1340,7 @@ pub async fn run_parallel_with_different_messages(
                     moonshot_api_key.as_deref(),
                     openai_api_key.as_deref(),
                     xai_api_key.as_deref(),
+                    anthropic_api_key.as_deref(),
                     max_tokens,
                     timeout_secs,
                     2,

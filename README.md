@@ -34,14 +34,14 @@ Multi-model collaboration produces better outcomes than any single model — but
 | Role | Model | Lab |
 |------|-------|-----|
 | Panelist | GPT-5.2 Pro | OpenAI |
-| Panelist | Gemini 3.1 Pro | Google |
+| Panelist | Claude Opus 4.6 | Anthropic |
 | Panelist | Grok 4 | xAI |
 | Panelist | Kimi K2.5 | Moonshot |
 | Panelist | GLM-5 | Zhipu |
-| Judge | Claude Opus 4.6 | Anthropic |
-| Critique | Gemini 3.1 Pro | Google |
+| Judge | Gemini 3.1 Pro | Google |
+| Critique | Claude Opus 4.6 | Anthropic |
 
-5 distinct labs on the panel. The judge (Anthropic) is not in the panelist pool.
+5 distinct labs on the panel. The judge (Google) is not in the panelist pool.
 
 ## Install
 

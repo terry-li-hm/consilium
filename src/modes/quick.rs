@@ -34,6 +34,7 @@ async fn run_quick_streaming(
     moonshot_api_key: Option<&str>,
     openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
+    anthropic_api_key: Option<&str>,
     max_tokens: u32,
     timeout: f64,
     cost_tracker: &CostTracker,
@@ -67,6 +68,7 @@ async fn run_quick_streaming(
         let moonshot_api_key = moonshot_api_key.map(|s| s.to_string());
         let openai_api_key = openai_api_key.map(|s| s.to_string());
         let xai_api_key = xai_api_key.map(|s| s.to_string());
+        let anthropic_api_key = anthropic_api_key.map(|s| s.to_string());
         let cost_tracker = cost_tracker.clone();
 
         pending.push(async move {
@@ -103,6 +105,7 @@ async fn run_quick_streaming(
                     moonshot_api_key.as_deref(),
                     openai_api_key.as_deref(),
                     xai_api_key.as_deref(),
+                    anthropic_api_key.as_deref(),
                     model_max_tokens,
                     timeout,
                     2,
@@ -149,6 +152,7 @@ async fn run_quick_parallel(
     moonshot_api_key: Option<&str>,
     openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
+    anthropic_api_key: Option<&str>,
     max_tokens: u32,
     timeout: f64,
     cost_tracker: &CostTracker,
@@ -172,6 +176,7 @@ async fn run_quick_parallel(
         let moonshot_api_key = moonshot_api_key.map(|s| s.to_string());
         let openai_api_key = openai_api_key.map(|s| s.to_string());
         let xai_api_key = xai_api_key.map(|s| s.to_string());
+        let anthropic_api_key = anthropic_api_key.map(|s| s.to_string());
         let cost_tracker = cost_tracker.clone();
 
         pending.push(async move {
@@ -188,6 +193,7 @@ async fn run_quick_parallel(
                 moonshot_api_key.as_deref(),
                 openai_api_key.as_deref(),
                 xai_api_key.as_deref(),
+                anthropic_api_key.as_deref(),
                 model_max_tokens,
                 timeout,
                 2,
@@ -220,6 +226,7 @@ pub async fn run_quick(
     moonshot_api_key: Option<&str>,
     openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
+    anthropic_api_key: Option<&str>,
     output: &mut dyn Output,
     format: &str,
     timeout: f64,
@@ -253,6 +260,7 @@ pub async fn run_quick(
             moonshot_api_key,
             openai_api_key,
             xai_api_key,
+            anthropic_api_key,
             2048,
             timeout,
             &cost_tracker,
@@ -269,6 +277,7 @@ pub async fn run_quick(
             moonshot_api_key,
             openai_api_key,
             xai_api_key,
+            anthropic_api_key,
             2048,
             timeout,
             &cost_tracker,

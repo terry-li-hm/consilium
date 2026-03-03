@@ -409,11 +409,11 @@ pub fn doctor() {
     println!();
     println!("Routing (benchmarked from HK, 2026-03-04):");
     println!("  {}  → OpenAI Responses API direct 1.6s (OR 4.0s)", council[0].0);
-    println!("  {}  → OpenRouter only (OR 5.0s vs Google direct 8.3s)", council[1].0);
+    println!("  {}  → Anthropic direct", council[1].0);
     println!("  {}    → xAI direct 5.8s  (OR 13.0s)", council[2].0);
     println!("  {} → Moonshot direct 2.7s (OR 2.6s, tied)", council[3].0);
     println!("  {}     → z.ai direct 2.6s  (OR 9.8s)", council[4].0);
-    println!("  Judge         → Anthropic direct");
+    println!("  Judge         → Google AI Studio direct (fallback OR)");
 }
 
 fn glm_model_name(council: &[ModelEntry]) -> &str {
