@@ -60,6 +60,7 @@ pub const CONSILIUM_MODEL_KIMI_ENV: &str = "CONSILIUM_MODEL_KIMI";
 pub const CONSILIUM_MODEL_GLM_ENV: &str = "CONSILIUM_MODEL_GLM";
 pub const CONSILIUM_MODEL_JUDGE_ENV: &str = "CONSILIUM_MODEL_JUDGE";
 pub const CONSILIUM_MODEL_CRITIQUE_ENV: &str = "CONSILIUM_MODEL_CRITIQUE";
+pub const GLM_MAX_TOKENS_ENV: &str = "GLM_MAX_TOKENS";
 
 fn env_override(var: &str) -> Option<String> {
     std::env::var(var).ok().and_then(|value| {
@@ -201,11 +202,28 @@ pub fn detect_social_context(question: &str) -> bool {
 
 /// Check if a response is an error string rather than real content.
 pub fn is_error_response(content: &str) -> bool {
-    !content.is_empty()
-        && content.starts_with('[')
-        && (content.starts_with("[Error:")
-            || content.starts_with("[No response")
-            || content.starts_with("[Model still thinking"))
+    content.is_empty()
+        || (content.starts_with('[')
+            && (content.starts_with("[Error:")
+                || content.starts_with("[No response")
+                || content.starts_with("[Model still thinking")))
+}
+
+/// Resolve per-model token budget overrides.
+pub fn per_model_max_tokens(model: &str, default: u32) -> u32 {
+    if model.to_ascii_lowercase().contains("glm") {
+        env_override(GLM_MAX_TOKENS_ENV)
+            .and_then(|value| value.parse::<u32>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(4096)
+    } else {
+        default
+    }
+}
+
+/// Build an explicit diagnostic when both primary and fallback attempts fail.
+pub fn fallback_also_failed_message(name: &str, primary: &str, fallback: &str) -> String {
+    format!("[Fallback also failed for {name}: primary={primary}, fallback={fallback}]")
 }
 
 /// Sanitize speaker content to prevent prompt injection.
@@ -460,7 +478,15 @@ mod tests {
     fn test_not_error_response() {
         assert!(!is_error_response("Normal response"));
         assert!(!is_error_response("[Some other bracket]"));
-        assert!(!is_error_response(""));
+        assert!(is_error_response(""));
+    }
+
+    #[test]
+    fn test_fallback_also_failed_message_format() {
+        assert_eq!(
+            fallback_also_failed_message("GLM", "[Error: primary]", "[Error: fallback]"),
+            "[Fallback also failed for GLM: primary=[Error: primary], fallback=[Error: fallback]]"
+        );
     }
 
     // --- sanitize_speaker_content ---

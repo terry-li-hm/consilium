@@ -42,14 +42,14 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `config.rs` | 899 | Constants, types, CostTracker, utility functions, 58 tests |
-| `api.rs` | 1413 | HTTP clients, SSE streaming, parallel queries, retry, fallback |
+| `config.rs` | 925 | Constants, types, CostTracker, utility functions, 58 tests |
+| `api.rs` | 1428 | HTTP clients, SSE streaming, parallel queries, retry, fallback |
 | `prompts.rs` | 719 | All prompt templates (verbatim port from Python) |
 | `session.rs` | 821 | Output trait + CompactTeeOutput, LiveWriter, session save/share/history |
 | `modes/council.rs` | 1466 | Full council deliberation |
 | `modes/discuss.rs` | 504 | Roundtable + socratic |
 | `modes/oxford.rs` | 318 | Oxford debate |
-| `modes/quick.rs` | 294 | Parallel streaming |
+| `modes/quick.rs` | 371 | Parallel streaming |
 | `modes/redteam.rs` | 262 | Adversarial stress-test |
 | `modes/premortem.rs` | 209 | Pre-mortem: assume failure, work backward |
 | `modes/forecast.rs` | 208 | Superforecasting: probability estimates + reconciliation |

@@ -1,8 +1,9 @@
 //! HTTP clients, SSE streaming, parallel queries, retry, and fallback.
 
 use crate::config::{
-    is_thinking_model, CostTracker, Message, ModelEntry, BIGMODEL_URL, GOOGLE_AI_STUDIO_URL,
-    ANTHROPIC_URL, ANTHROPIC_VERSION, MOONSHOT_URL, OPENAI_URL, OPENROUTER_URL, XAI_URL,
+    fallback_also_failed_message, is_error_response, is_thinking_model, CostTracker, Message,
+    ModelEntry, ANTHROPIC_URL, ANTHROPIC_VERSION, BIGMODEL_URL, GOOGLE_AI_STUDIO_URL,
+    MOONSHOT_URL, OPENAI_URL, OPENROUTER_URL, XAI_URL,
 };
 use crate::session::Output;
 use futures_util::StreamExt;
@@ -923,11 +924,12 @@ pub async fn query_model_with_fallback(
     cost_tracker: Option<&CostTracker>,
 ) -> (String, String, String) {
     let model_name = model.split('/').next_back().unwrap_or(model).to_string();
+    let mut primary_response: Option<String> = None;
 
     // For GLM: try bigmodel.cn directly first (more reliable than OpenRouter z-ai)
     if let Some(("zhipu", zhipu_model)) = fallback {
         if let Some(zapi_key) = zhipu_api_key {
-            let primary_response = query_bigmodel(
+            let response = query_bigmodel(
                 client,
                 zapi_key,
                 zhipu_model,
@@ -937,9 +939,10 @@ pub async fn query_model_with_fallback(
                 retries,
             )
             .await;
-            if !primary_response.starts_with('[') {
-                return (name.to_string(), zhipu_model.to_string(), primary_response);
+            if !is_error_response(&response) {
+                return (name.to_string(), zhipu_model.to_string(), response);
             }
+            primary_response = Some(response);
             // bigmodel.cn failed — fall through to OpenRouter
         }
     }
@@ -947,7 +950,7 @@ pub async fn query_model_with_fallback(
     // For GPT: try OpenAI directly first
     if let Some(("openai", openai_model)) = fallback {
         if let Some(oapi_key) = openai_api_key {
-            let primary_response = query_openai(
+            let response = query_openai(
                 client,
                 oapi_key,
                 openai_model,
@@ -957,9 +960,10 @@ pub async fn query_model_with_fallback(
                 retries,
             )
             .await;
-            if !primary_response.starts_with('[') {
-                return (name.to_string(), openai_model.to_string(), primary_response);
+            if !is_error_response(&response) {
+                return (name.to_string(), openai_model.to_string(), response);
             }
+            primary_response = Some(response);
             // OpenAI failed — fall through to OpenRouter
         }
     }
@@ -967,7 +971,7 @@ pub async fn query_model_with_fallback(
     // For Kimi: try Moonshot.cn directly first
     if let Some(("moonshot", moonshot_model)) = fallback {
         if let Some(mapi_key) = moonshot_api_key {
-            let primary_response = query_moonshot(
+            let response = query_moonshot(
                 client,
                 mapi_key,
                 moonshot_model,
@@ -977,9 +981,10 @@ pub async fn query_model_with_fallback(
                 retries,
             )
             .await;
-            if !primary_response.starts_with('[') {
-                return (name.to_string(), moonshot_model.to_string(), primary_response);
+            if !is_error_response(&response) {
+                return (name.to_string(), moonshot_model.to_string(), response);
             }
+            primary_response = Some(response);
             // Moonshot failed — fall through to OpenRouter
         }
     }
@@ -987,7 +992,7 @@ pub async fn query_model_with_fallback(
     // For Grok: try xAI directly first
     if let Some(("xai", xai_model)) = fallback {
         if let Some(xapi_key) = xai_api_key {
-            let primary_response = query_xai(
+            let response = query_xai(
                 client,
                 xapi_key,
                 xai_model,
@@ -997,9 +1002,10 @@ pub async fn query_model_with_fallback(
                 retries,
             )
             .await;
-            if !primary_response.starts_with('[') {
-                return (name.to_string(), xai_model.to_string(), primary_response);
+            if !is_error_response(&response) {
+                return (name.to_string(), xai_model.to_string(), response);
             }
+            primary_response = Some(response);
             // xAI failed — fall through to OpenRouter
         }
     }
@@ -1007,7 +1013,7 @@ pub async fn query_model_with_fallback(
     // For Gemini: try Google AI Studio directly first
     if let Some(("google", google_model)) = fallback {
         if let Some(gapi_key) = google_api_key {
-            let primary_response = query_google_ai_studio(
+            let response = query_google_ai_studio(
                 client,
                 gapi_key,
                 google_model,
@@ -1017,9 +1023,10 @@ pub async fn query_model_with_fallback(
                 retries,
             )
             .await;
-            if !primary_response.starts_with('[') {
-                return (name.to_string(), google_model.to_string(), primary_response);
+            if !is_error_response(&response) {
+                return (name.to_string(), google_model.to_string(), response);
             }
+            primary_response = Some(response);
             // Google AI Studio failed — fall through to OpenRouter
         }
     }
@@ -1037,8 +1044,16 @@ pub async fn query_model_with_fallback(
     .await;
 
     // If OpenRouter succeeded, return
-    if !response.starts_with('[') {
+    if !is_error_response(&response) {
         return (name.to_string(), model_name, response);
+    }
+
+    if let Some(primary) = primary_response {
+        return (
+            name.to_string(),
+            model_name,
+            fallback_also_failed_message(name, &primary, &response),
+        );
     }
 
     (name.to_string(), model_name, response)
@@ -1172,7 +1187,7 @@ pub async fn run_parallel(
 
     if let Some(out) = output {
         for (name, _, response) in &final_results {
-            if !response.starts_with('[') {
+            if !is_error_response(response) {
                 let _ = out.write_str(&format!("\n### {}\n", name));
                 let _ = out.write_str(&format!("{}\n\n", response));
             }
@@ -1268,7 +1283,7 @@ pub async fn run_parallel_with_different_messages(
 
     if let Some(out) = output {
         for (name, _, response) in &final_results {
-            if !response.starts_with('[') {
+            if !is_error_response(response) {
                 let _ = out.write_str(&format!("\n### {}\n", name));
                 let _ = out.write_str(&format!("{}\n\n", response));
             }
