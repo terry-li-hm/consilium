@@ -13,6 +13,7 @@ use crate::prompts::{
 };
 use crate::session::Output;
 use chrono::Local;
+use rand::seq::SliceRandom;
 use regex::Regex;
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -918,40 +919,54 @@ pub async fn run_council(
                 }
 
                 let current_round_start_idx = round_num * council_config.len();
+                let mut own_msgs: Vec<String> = Vec::new();
+                let mut other_msgs: Vec<String> = Vec::new();
                 for (speaker, text) in conversation.iter().skip(current_round_start_idx) {
                     if is_error_response(text) {
                         continue;
                     }
-                    let speaker_dname = display_names
-                        .get(speaker)
-                        .cloned()
-                        .unwrap_or_else(|| speaker.clone());
                     let sanitized_text = sanitize_speaker_content(text);
                     if speaker == name {
-                        messages.push(Message::assistant(sanitized_text));
+                        own_msgs.push(sanitized_text);
                     } else {
-                        messages.push(Message::user(format!(
-                            "[{speaker_dname}]: {sanitized_text}"
-                        )));
+                        let speaker_dname = display_names
+                            .get(speaker)
+                            .cloned()
+                            .unwrap_or_else(|| speaker.clone());
+                        other_msgs.push(format!("[{speaker_dname}]: {sanitized_text}"));
                     }
                 }
+                other_msgs.shuffle(&mut rand::thread_rng());
+                for msg in own_msgs {
+                    messages.push(Message::assistant(msg));
+                }
+                for msg in other_msgs {
+                    messages.push(Message::user(msg));
+                }
             } else {
+                let mut own_msgs: Vec<String> = Vec::new();
+                let mut other_msgs: Vec<String> = Vec::new();
                 for (speaker, text) in &conversation {
                     if is_error_response(text) {
                         continue;
                     }
-                    let speaker_dname = display_names
-                        .get(speaker)
-                        .cloned()
-                        .unwrap_or_else(|| speaker.clone());
                     let sanitized_text = sanitize_speaker_content(text);
                     if speaker == name {
-                        messages.push(Message::assistant(sanitized_text));
+                        own_msgs.push(sanitized_text);
                     } else {
-                        messages.push(Message::user(format!(
-                            "[{speaker_dname}]: {sanitized_text}"
-                        )));
+                        let speaker_dname = display_names
+                            .get(speaker)
+                            .cloned()
+                            .unwrap_or_else(|| speaker.clone());
+                        other_msgs.push(format!("[{speaker_dname}]: {sanitized_text}"));
                     }
+                }
+                other_msgs.shuffle(&mut rand::thread_rng());
+                for msg in own_msgs {
+                    messages.push(Message::assistant(msg));
+                }
+                for msg in other_msgs {
+                    messages.push(Message::user(msg));
                 }
             }
 
