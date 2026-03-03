@@ -4,7 +4,7 @@ use crate::api::{query_judge, query_model, query_model_async, run_parallel};
 use crate::config::{
     detect_consensus, detect_social_context, is_error_response, parse_confidence,
     resolved_judge_model, sanitize_speaker_content, CostTracker, Message, ModelEntry,
-    SessionResult, CRITIQUE_MODEL, EXTRACTION_MODEL,
+    resolved_critique_model, SessionResult, EXTRACTION_MODEL,
 };
 use crate::prompts::{
     council_blind_system, council_challenger_addition, council_debate_system,
@@ -1173,10 +1173,11 @@ pub async fn run_council(
                 )),
             ];
 
-            let critique_name = CRITIQUE_MODEL
+            let critique_model = resolved_critique_model();
+            let critique_name = critique_model
                 .split('/')
                 .next_back()
-                .unwrap_or(CRITIQUE_MODEL);
+                .unwrap_or(&critique_model);
             let critique_t0 = Instant::now();
             let _ = output.begin_phase("JUDGMENT");
             let _ = output.begin_participant(&format!("Critique ({critique_name})"));
@@ -1185,7 +1186,7 @@ pub async fn run_council(
             let critique_response = query_model(
                 &client,
                 api_key,
-                CRITIQUE_MODEL,
+                &critique_model,
                 &critique_messages,
                 800,
                 300.0,

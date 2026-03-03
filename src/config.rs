@@ -59,6 +59,7 @@ pub const CONSILIUM_MODEL_GROK_ENV: &str = "CONSILIUM_MODEL_GROK";
 pub const CONSILIUM_MODEL_KIMI_ENV: &str = "CONSILIUM_MODEL_KIMI";
 pub const CONSILIUM_MODEL_GLM_ENV: &str = "CONSILIUM_MODEL_GLM";
 pub const CONSILIUM_MODEL_JUDGE_ENV: &str = "CONSILIUM_MODEL_JUDGE";
+pub const CONSILIUM_MODEL_CRITIQUE_ENV: &str = "CONSILIUM_MODEL_CRITIQUE";
 
 fn env_override(var: &str) -> Option<String> {
     std::env::var(var).ok().and_then(|value| {
@@ -120,6 +121,11 @@ pub fn resolved_council() -> Vec<ModelEntry> {
 /// Resolve judge model at runtime, applying env var override.
 pub fn resolved_judge_model() -> String {
     env_override(CONSILIUM_MODEL_JUDGE_ENV).unwrap_or_else(|| JUDGE_MODEL.to_string())
+}
+
+/// Resolve critique model at runtime, applying env var override.
+pub fn resolved_critique_model() -> String {
+    env_override(CONSILIUM_MODEL_CRITIQUE_ENV).unwrap_or_else(|| CRITIQUE_MODEL.to_string())
 }
 
 /// Quick mode: council + Claude (no judge conflict in quick mode).
