@@ -36,7 +36,7 @@ pub const COUNCIL: &[ModelEntry] = &[
     (
         "Gemini",
         "google/gemini-3.1-pro-preview",
-        Some(("google", "gemini-2.5-pro")),
+        Some(("google", "gemini-3.1-pro-preview")),
     ),
     ("Grok", "x-ai/grok-4", Some(("xai", "grok-4"))),
     (
@@ -93,8 +93,8 @@ pub fn resolved_council() -> Vec<ModelEntry> {
     let gemini_fallback = gemini_override
         .as_ref()
         .map(|v| v.strip_prefix("google/").unwrap_or(v.as_str()).to_string())
-        .map(|v| leak_if_needed(v, "gemini-2.5-pro"))
-        .unwrap_or("gemini-2.5-pro");
+        .map(|v| leak_if_needed(v, "gemini-3.1-pro-preview"))
+        .unwrap_or("gemini-3.1-pro-preview");
 
     let grok_model = env_override(CONSILIUM_MODEL_GROK_ENV)
         .map(|v| leak_if_needed(v, "x-ai/grok-4"))
