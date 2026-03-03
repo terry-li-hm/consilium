@@ -57,7 +57,7 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 | `tui.rs` | 433 | Ratatui TUI (Flexoki dark) |
 | `watch.rs` | 275 | Crossterm live watcher |
 | `cli.rs` | 195 | Clap derive struct (~30 flags) |
-| `main.rs` | 317 | Entry point + mode dispatch |
+| `main.rs` | 323 | Entry point + mode dispatch |
 
 ## Testing
 

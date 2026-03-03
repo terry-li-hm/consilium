@@ -94,6 +94,11 @@ async fn main() {
         }
     };
 
+    if question.is_empty() {
+        eprintln!("Error: question is empty (check --prompt-file contents or positional arg)");
+        std::process::exit(1);
+    }
+
     let api_key = match std::env::var("OPENROUTER_API_KEY") {
         Ok(v) if !v.trim().is_empty() => v,
         _ => {
@@ -123,11 +128,12 @@ async fn main() {
     };
 
     let color = std::env::var("NO_COLOR").is_err() && std::io::stdout().is_terminal();
-    let mut output: Box<dyn consilium::session::Output> = if args.stream || args.quiet {
-        setup_live_output(effective_quiet, color)
-    } else if stdout_is_file_redirect() {
-        // Stdout redirected to a file (e.g. background capture) — write full token stream
+    let mut output: Box<dyn consilium::session::Output> = if stdout_is_file_redirect() {
+        // Stdout redirected to a file (background capture) — always stream full output
+        // regardless of --quiet so TaskOutput shows progress and the task doesn't look stuck.
         Box::new(AgentOutput::new(None, false))
+    } else if args.stream || args.quiet {
+        setup_live_output(effective_quiet, color)
     } else {
         let session_file_path = prepare_live_session_path();
         Box::new(HumanOutput::new(&session_file_path, color))
