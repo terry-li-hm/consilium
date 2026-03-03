@@ -383,13 +383,6 @@ pub fn doctor() {
     let m5_source = env_source(CONSILIUM_MODEL_M5_ENV);
     let judge_source = env_source(CONSILIUM_MODEL_JUDGE_ENV);
 
-    let gemini_fallback = council
-        .iter()
-        .find(|(_, _, fallback)| fallback.map(|(p, _)| p).unwrap_or("") == "google")
-        .and_then(|(_, _, fallback)| *fallback)
-        .map(|(_, model)| model)
-        .unwrap_or("gemini-3.1-pro-preview");
-
     println!("consilium doctor");
     println!("═══════════════════════════════════════");
     println!();
@@ -414,13 +407,13 @@ pub fn doctor() {
     println!("  {:<20} {}", "ZHIPU_API_KEY", key_marker("ZHIPU_API_KEY"));
     println!("  {:<20} {}", "MOONSHOT_API_KEY", key_marker("MOONSHOT_API_KEY"));
     println!();
-    println!("Fallbacks (native API → OpenRouter):");
-    println!("  {}  → OpenAI direct (openai/gpt-5.2-pro)", council[0].0);
-    println!("  {}  → Google AI Studio (google/{gemini_fallback})", council[1].0);
-    println!("  {}    → xAI direct (x-ai/grok-4)", council[2].0);
-    println!("  {} → no native fallback (OpenRouter only)", council[3].0);
-    println!("  {}     → bigmodel.cn direct (glm-5)", council[4].0);
-    println!("  Judge         → Anthropic direct (claude-opus-4-6)");
+    println!("Routing (benchmarked from HK, 2026-03-04):");
+    println!("  {}  → OpenAI Responses API direct 1.6s (OR 4.0s)", council[0].0);
+    println!("  {}  → OpenRouter only (OR 5.0s vs Google direct 8.3s)", council[1].0);
+    println!("  {}    → xAI direct 5.8s  (OR 13.0s)", council[2].0);
+    println!("  {} → Moonshot direct 2.7s (OR 2.6s, tied)", council[3].0);
+    println!("  {}     → z.ai direct 2.6s  (OR 9.8s)", council[4].0);
+    println!("  Judge         → Anthropic direct");
 }
 
 fn glm_model_name(council: &[ModelEntry]) -> &str {

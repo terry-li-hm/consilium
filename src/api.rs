@@ -3,7 +3,7 @@
 use crate::config::{
     fallback_also_failed_message, is_error_response, is_thinking_model, CostTracker, Message,
     ModelEntry, ANTHROPIC_URL, ANTHROPIC_VERSION, BIGMODEL_URL, GOOGLE_AI_STUDIO_URL,
-    MOONSHOT_URL, OPENAI_URL, OPENROUTER_URL, XAI_URL,
+    MOONSHOT_URL, OPENAI_RESPONSES_URL, OPENROUTER_URL, XAI_URL,
 };
 use crate::session::Output;
 use futures_util::StreamExt;
@@ -579,7 +579,9 @@ pub async fn query_xai(
     format!("[Error: Failed to get response from xai {model}]")
 }
 
-/// Query OpenAI directly (primary for GPT models).
+/// Query OpenAI directly via Responses API (supports gpt-5.2-pro and all GPT-5.x models).
+/// Responses API differs from chat/completions: uses `input`/`max_output_tokens` in request,
+/// and returns an `output` array (skip reasoning entries, find type=="message").
 pub async fn query_openai(
     client: &Client,
     api_key: &str,
@@ -604,13 +606,13 @@ pub async fn query_openai(
         }
 
         let result = client
-            .post(OPENAI_URL)
+            .post(OPENAI_RESPONSES_URL)
             .header("Authorization", format!("Bearer {api_key}"))
             .timeout(Duration::from_secs_f64(timeout_secs))
             .json(&serde_json::json!({
                 "model": model,
-                "messages": messages,
-                "max_tokens": max_tokens,
+                "input": messages,
+                "max_output_tokens": max_tokens,
             }))
             .send()
             .await;
@@ -645,16 +647,25 @@ pub async fn query_openai(
             return format!("[Error: {msg}]");
         }
 
-        let choices = match data.get("choices").and_then(|c| c.as_array()) {
-            Some(c) if !c.is_empty() => c,
-            _ if attempt < retries => continue,
-            _ => return format!("[Error: No response from openai {model}]"),
-        };
-
-        let content = choices[0]
-            .get("message")
-            .and_then(|m| m.get("content"))
-            .and_then(|c| c.as_str())
+        // Responses API returns an `output` array; reasoning models also emit a
+        // `type: "reasoning"` entry before the message — skip it and find the message.
+        let content = data
+            .get("output")
+            .and_then(|o| o.as_array())
+            .and_then(|arr| {
+                arr.iter().find(|e| {
+                    e.get("type").and_then(|t| t.as_str()) == Some("message")
+                })
+            })
+            .and_then(|e| e.get("content"))
+            .and_then(|c| c.as_array())
+            .and_then(|arr| {
+                arr.iter().find(|e| {
+                    e.get("type").and_then(|t| t.as_str()) == Some("output_text")
+                })
+            })
+            .and_then(|e| e.get("text"))
+            .and_then(|t| t.as_str())
             .unwrap_or("");
 
         if content.trim().is_empty() {

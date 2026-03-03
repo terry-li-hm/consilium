@@ -14,7 +14,8 @@ pub struct SessionResult {
 }
 
 /// Model entry: (display_name, openrouter_model, fallback).
-/// Fallback is (provider, model) — currently supports "google", "zhipu", and "moonshot".
+/// Fallback is (provider, model) — supports "xai", "zhipu", "moonshot".
+/// GPT (OpenAI direct 404s on gpt-5.2-pro) and Gemini (OR faster from HK) use OpenRouter only.
 pub type ModelEntry = (
     &'static str,
     &'static str,
@@ -27,23 +28,22 @@ pub const BIGMODEL_URL: &str = "https://api.z.ai/api/paas/v4/chat/completions";
 pub const MOONSHOT_URL: &str = "https://api.moonshot.ai/v1/chat/completions";
 pub const XAI_URL: &str = "https://api.x.ai/v1/chat/completions";
 pub const OPENAI_URL: &str = "https://api.openai.com/v1/chat/completions";
+pub const OPENAI_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 pub const ANTHROPIC_URL: &str = "https://api.anthropic.com/v1/messages";
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 
 // Council: 5 panelists (Claude is judge-only to avoid conflict of interest)
+// Fallback routing based on HK latency benchmark (2026-03-04):
+//   GPT: None — gpt-5.2-pro returns 404 on OpenAI chat/completions (not a chat model)
+//   Gemini: None — OR (5.0s) is faster than Google AI Studio direct (8.3s) from HK
+//   Grok: xAI direct (5.8s) vs OR (13.0s) — direct much faster
+//   Kimi: moonshot.ai direct (2.7s) vs OR (2.6s) — tied, keep native
+//   GLM: z.ai direct (2.6s) vs OR (9.8s) — direct much faster
 pub const COUNCIL: &[ModelEntry] = &[
-    ("GPT", "openai/gpt-5.2-pro", Some(("openai", "gpt-5.2-pro"))),
-    (
-        "Gemini",
-        "google/gemini-3.1-pro-preview",
-        Some(("google", "gemini-3.1-pro-preview")),
-    ),
+    ("GPT", "openai/gpt-5.2-pro", Some(("openai", "gpt-5.2-pro"))), // via Responses API
+    ("Gemini", "google/gemini-3.1-pro-preview", None),
     ("Grok", "x-ai/grok-4", Some(("xai", "grok-4"))),
-    (
-        "Kimi",
-        "moonshotai/kimi-k2.5",
-        Some(("moonshot", "kimi-k2-5")),
-    ),
+    ("Kimi", "moonshotai/kimi-k2.5", Some(("moonshot", "kimi-k2.5"))),
     ("GLM", "z-ai/glm-5", Some(("zhipu", "glm-5"))),
 ];
 
@@ -121,17 +121,10 @@ pub fn resolved_council() -> Vec<ModelEntry> {
         .unwrap_or("openai/gpt-5.2-pro");
     let model_1_name = leak_if_needed(display_name_from_model(model_1), "GPT-5.2-Pro");
 
-    let model_2_override = env_override(CONSILIUM_MODEL_M2_ENV);
-    let model_2 = model_2_override
-        .as_ref()
-        .map(|v| leak_if_needed(v.clone(), "google/gemini-3.1-pro-preview"))
+    let model_2 = env_override(CONSILIUM_MODEL_M2_ENV)
+        .map(|v| leak_if_needed(v, "google/gemini-3.1-pro-preview"))
         .unwrap_or("google/gemini-3.1-pro-preview");
     let model_2_name = leak_if_needed(display_name_from_model(model_2), "Gemini-3.1-Pro");
-    let model_2_fallback = model_2_override
-        .as_ref()
-        .map(|v| v.strip_prefix("google/").unwrap_or(v.as_str()).to_string())
-        .map(|v| leak_if_needed(v, "gemini-3.1-pro-preview"))
-        .unwrap_or("gemini-3.1-pro-preview");
 
     let model_3 = env_override(CONSILIUM_MODEL_M3_ENV)
         .map(|v| leak_if_needed(v, "x-ai/grok-4"))
@@ -149,8 +142,8 @@ pub fn resolved_council() -> Vec<ModelEntry> {
     let model_5_name = leak_if_needed(display_name_from_model("z-ai/glm-5"), "GLM-5");
 
     vec![
-        (model_1_name, model_1, Some(("openai", "gpt-5.2-pro"))),
-        (model_2_name, model_2, Some(("google", model_2_fallback))),
+        (model_1_name, model_1, Some(("openai", "gpt-5.2-pro"))), // Responses API direct ~1.6s vs OR 4.0s
+        (model_2_name, model_2, None), // OR only: OR 5.0s vs direct 8.3s from HK
         (model_3_name, model_3, Some(("xai", "grok-4"))),
         (model_4_name, model_4, Some(("moonshot", "kimi-k2.5"))),
         (model_5_name, "z-ai/glm-5", Some(("zhipu", model_5_fallback))),

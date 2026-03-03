@@ -42,8 +42,8 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `config.rs` | 981 | Constants, types, CostTracker, utility functions, 58 tests |
-| `api.rs` | 1436 | HTTP clients, SSE streaming, parallel queries, retry, fallback |
+| `config.rs` | 974 | Constants, types, CostTracker, utility functions, 58 tests |
+| `api.rs` | 1447 | HTTP clients, SSE streaming, parallel queries, retry, fallback |
 | `prompts.rs` | 719 | All prompt templates (verbatim port from Python) |
 | `session.rs` | 821 | Output trait + CompactTeeOutput, LiveWriter, session save/share/history |
 | `modes/council.rs` | 1482 | Full council deliberation |
@@ -53,7 +53,7 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 | `modes/redteam.rs` | 263 | Adversarial stress-test |
 | `modes/premortem.rs` | 210 | Pre-mortem: assume failure, work backward |
 | `modes/forecast.rs` | 210 | Superforecasting: probability estimates + reconciliation |
-| `admin.rs` | 447 | Stats, sessions, view, search |
+| `admin.rs` | 440 | Stats, sessions, view, search |
 | `tui.rs` | 433 | Ratatui TUI (Flexoki dark) |
 | `watch.rs` | 275 | Crossterm live watcher |
 | `cli.rs` | 195 | Clap derive struct (~30 flags) |
