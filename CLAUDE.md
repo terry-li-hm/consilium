@@ -36,6 +36,7 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 - **`cargo build --release` must be re-run** after source changes for the symlinked binary to update.
 - **Google AI Studio fallback** only activates for Gemini models. Message format conversion happens in `query_google_ai_studio()`.
 - **SSE parsing** assumes OpenRouter format. Two reasoning token formats: DeepSeek-R1 (`<think>` in `delta.content`) and OpenAI (`delta.reasoning_details`).
+- **Council composition changes require README update.** The models table in `README.md` must be kept in sync with `resolved_council()` in `config.rs`. The `COUNCIL` const is dead code — only `resolved_council()` matters at runtime.
 
 ## Module map
 
