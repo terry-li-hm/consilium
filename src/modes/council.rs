@@ -20,6 +20,33 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::Instant;
 
+/// Extract self-reported confidence score from a response (e.g. "**Confidence: 7/10**").
+/// Searches the last 10 lines for the pattern. Returns None if not found.
+fn extract_confidence_score(text: &str) -> Option<u8> {
+    for line in text.lines().rev().take(10) {
+        let lower = line.to_lowercase();
+        if lower.contains("confidence:") {
+            if let Some(slash_pos) = lower.rfind("/10") {
+                let before = &lower[..slash_pos];
+                let digits: String = before
+                    .chars()
+                    .rev()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect::<String>()
+                    .chars()
+                    .rev()
+                    .collect();
+                if let Ok(n) = digits.parse::<u8>() {
+                    if n <= 10 {
+                        return Some(n);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 static ARRAY_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?s)\[.*?\]").expect("valid regex"));
 static BULLET_RE: LazyLock<Regex> =
@@ -1057,6 +1084,37 @@ pub async fn run_council(
         .collect::<Vec<_>>()
         .join("\n\n");
 
+    // Extract final confidence score per speaker (last response wins).
+    // Only present in debate rounds — blind responses don't request scores.
+    let mut final_confidence: HashMap<String, u8> = HashMap::new();
+    for (speaker, text) in valid_conversation.iter().rev() {
+        if !final_confidence.contains_key(speaker) {
+            if let Some(score) = extract_confidence_score(text) {
+                final_confidence.insert(speaker.clone(), score);
+            }
+        }
+    }
+    let confidence_summary: String = {
+        let lines: Vec<String> = council_config
+            .iter()
+            .filter_map(|(name, _, _)| {
+                let label = display_names
+                    .get(*name)
+                    .cloned()
+                    .unwrap_or_else(|| name.to_string());
+                final_confidence.get(*name).map(|s| format!("- {label}: {s}/10"))
+            })
+            .collect();
+        if lines.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "\n\nFinal self-reported confidence scores (post-debate):\n{}\nHigh confidence + independent blind agreement = strong signal. A confidence drop after debate may indicate genuine persuasion or sycophancy — cross-check with POSITION CHANGE labels.",
+                lines.join("\n")
+            )
+        }
+    };
+
     if valid_conversation.len() < conversation.len() {
         let failed_count = conversation.len() - valid_conversation.len();
         deliberation_text.push_str(&format!(
@@ -1124,7 +1182,7 @@ pub async fn run_council(
         let judge_messages = vec![
             Message::system(judge_system),
             Message::user(format!(
-                "Question:\n{question}\n\n---\n\nCouncil Deliberation:\n\n{deliberation_text}"
+                "Question:\n{question}\n\n---\n\nCouncil Deliberation:\n\n{deliberation_text}{confidence_summary}"
             )),
         ];
 
