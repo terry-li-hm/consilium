@@ -4,9 +4,22 @@ use crate::api::{query_model_async, query_model_streaming, run_parallel};
 use crate::config::{is_error_response, CostTracker, Message, ModelEntry, SessionResult};
 use crate::session::Output;
 use chrono::Local;
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use reqwest::Client;
 use serde_json::json;
 use std::time::Instant;
+
+struct NullOutput;
+
+impl Output for NullOutput {
+    fn write_str(&mut self, _s: &str) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 async fn run_quick_streaming(
     question: &str,
@@ -32,68 +45,85 @@ async fn run_quick_streaming(
     let messages = vec![Message::user(&full_question)];
 
     let mut out = Vec::with_capacity(models.len());
+    let mut pending = FuturesUnordered::new();
 
     for &(name, model, fallback) in models {
-        let model_name = model.split('/').next_back().unwrap_or(model).to_string();
-        let participant_start = Instant::now();
-        let _ = output.begin_participant(&model_name);
+        let client = client.clone();
+        let api_key = api_key.to_string();
+        let messages = messages.clone();
+        let name = name.to_string();
+        let model = model.to_string();
+        let model_name = model.split('/').next_back().unwrap_or(&model).to_string();
+        let fallback_owned: Option<(String, String)> =
+            fallback.map(|(provider, fallback_model)| {
+                (provider.to_string(), fallback_model.to_string())
+            });
+        let google_api_key = google_api_key.map(|s| s.to_string());
+        let zhipu_api_key = zhipu_api_key.map(|s| s.to_string());
+        let moonshot_api_key = moonshot_api_key.map(|s| s.to_string());
+        let openai_api_key = openai_api_key.map(|s| s.to_string());
+        let xai_api_key = xai_api_key.map(|s| s.to_string());
+        let cost_tracker = cost_tracker.clone();
 
-        let _ = output.write_str(&format!("### {model_name}\n"));
+        pending.push(async move {
+            let participant_start = Instant::now();
+            let mut null_output = NullOutput;
 
-        let mut response = query_model_streaming(
-            &client,
-            api_key,
-            model,
-            &messages,
-            max_tokens,
-            timeout,
-            Some(cost_tracker),
-            output,
-        )
-        .await;
-
-        let mut used_model_name = model_name.clone();
-
-        // Fallback only if streaming failed.
-        if is_error_response(&response) {
-            let (_, fb_model_name, fb_response) = query_model_async(
+            let mut response = query_model_streaming(
                 &client,
-                api_key,
-                model,
+                &api_key,
+                &model,
                 &messages,
-                name,
-                fallback,
-                google_api_key,
-                zhipu_api_key,
-                moonshot_api_key,
-                openai_api_key,
-                xai_api_key,
                 max_tokens,
-                2,
-                Some(cost_tracker),
+                timeout,
+                Some(&cost_tracker),
+                &mut null_output,
             )
             .await;
 
-            used_model_name = fb_model_name;
-            response = fb_response;
+            let mut used_model_name = model_name.clone();
+            let fallback_ref = fallback_owned.as_ref().map(|(p, m)| (p.as_str(), m.as_str()));
 
-            if !is_error_response(&response) {
-                let _ = output.write_str(&format!("{}\n", response));
+            // Fallback only if streaming failed.
+            if is_error_response(&response) {
+                let (_, fb_model_name, fb_response) = query_model_async(
+                    &client,
+                    &api_key,
+                    &model,
+                    &messages,
+                    &name,
+                    fallback_ref,
+                    google_api_key.as_deref(),
+                    zhipu_api_key.as_deref(),
+                    moonshot_api_key.as_deref(),
+                    openai_api_key.as_deref(),
+                    xai_api_key.as_deref(),
+                    max_tokens,
+                    2,
+                    Some(&cost_tracker),
+                )
+                .await;
+
+                used_model_name = fb_model_name;
+                response = fb_response;
             }
-        }
 
-        let _ = output.write_str("\n");
-        let _ = output.end_participant(
-            &model_name,
-            &response,
-            participant_start.elapsed().as_millis() as u64,
-        );
+            (
+                name,
+                model_name,
+                used_model_name,
+                response.trim().to_string(),
+                participant_start.elapsed().as_millis() as u64,
+            )
+        });
+    }
 
-        out.push((
-            name.to_string(),
-            used_model_name,
-            response.trim().to_string(),
-        ));
+    while let Some((name, model_name, used_model_name, response, elapsed_ms)) = pending.next().await
+    {
+        let _ = output.begin_participant(&model_name);
+        let _ = output.write_str(&format!("### {model_name}\n{response}\n\n"));
+        let _ = output.end_participant(&model_name, &response, elapsed_ms);
+        out.push((name, used_model_name, response));
     }
 
     out
