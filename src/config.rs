@@ -24,7 +24,7 @@ pub type ModelEntry = (
 pub const OPENROUTER_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 pub const GOOGLE_AI_STUDIO_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 pub const BIGMODEL_URL: &str = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
-pub const MOONSHOT_URL: &str = "https://api.moonshot.cn/v1/chat/completions";
+pub const MOONSHOT_URL: &str = "https://api.moonshot.ai/v1/chat/completions";
 pub const XAI_URL: &str = "https://api.x.ai/v1/chat/completions";
 pub const OPENAI_URL: &str = "https://api.openai.com/v1/chat/completions";
 pub const ANTHROPIC_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -139,9 +139,9 @@ pub fn resolved_council() -> Vec<ModelEntry> {
     let model_3_name = leak_if_needed(display_name_from_model(model_3), "Grok-4");
 
     let model_4 = env_override(CONSILIUM_MODEL_M4_ENV)
-        .map(|v| leak_if_needed(v, "deepseek/deepseek-v3.2"))
-        .unwrap_or("deepseek/deepseek-v3.2");
-    let model_4_name = leak_if_needed(display_name_from_model(model_4), "DeepSeek-V3.2");
+        .map(|v| leak_if_needed(v, "moonshotai/kimi-k2.5"))
+        .unwrap_or("moonshotai/kimi-k2.5");
+    let model_4_name = leak_if_needed(display_name_from_model(model_4), "Kimi-K2.5");
 
     let model_5_fallback = env_override(CONSILIUM_MODEL_M5_ENV)
         .map(|v| leak_if_needed(v, "glm-5"))
@@ -152,7 +152,7 @@ pub fn resolved_council() -> Vec<ModelEntry> {
         (model_1_name, model_1, Some(("openai", "gpt-5.2-pro"))),
         (model_2_name, model_2, Some(("google", model_2_fallback))),
         (model_3_name, model_3, Some(("xai", "grok-4"))),
-        (model_4_name, model_4, None),
+        (model_4_name, model_4, Some(("moonshot", "kimi-k2.5"))),
         (model_5_name, "z-ai/glm-5", Some(("zhipu", model_5_fallback))),
     ]
 }
