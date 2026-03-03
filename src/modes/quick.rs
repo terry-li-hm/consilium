@@ -104,6 +104,7 @@ async fn run_quick_streaming(
                     openai_api_key.as_deref(),
                     xai_api_key.as_deref(),
                     model_max_tokens,
+                    timeout,
                     2,
                     Some(&cost_tracker),
                 )
@@ -149,6 +150,7 @@ async fn run_quick_parallel(
     openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
     max_tokens: u32,
+    timeout: f64,
     cost_tracker: &CostTracker,
 ) -> Vec<(String, String, String)> {
     let client = Client::new();
@@ -187,6 +189,7 @@ async fn run_quick_parallel(
                 openai_api_key.as_deref(),
                 xai_api_key.as_deref(),
                 model_max_tokens,
+                timeout,
                 2,
                 Some(&cost_tracker),
             )
@@ -267,6 +270,7 @@ pub async fn run_quick(
             openai_api_key,
             xai_api_key,
             2048,
+            timeout,
             &cost_tracker,
         )
         .await

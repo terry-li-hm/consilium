@@ -93,6 +93,7 @@ pub async fn run_premortem(
         openai_api_key,
         xai_api_key,
         700,
+        timeout,
         Some(&cost_tracker),
         None,
     )

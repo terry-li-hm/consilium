@@ -92,6 +92,7 @@ pub async fn run_redteam(
         openai_api_key,
         xai_api_key,
         600,
+        timeout,
         Some(&cost_tracker),
         None,
     )

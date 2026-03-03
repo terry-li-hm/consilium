@@ -139,6 +139,7 @@ pub async fn run_oxford(
         openai_api_key,
         xai_api_key,
         800,
+        timeout,
         Some(&cost_tracker),
         None,
     )
@@ -194,6 +195,7 @@ pub async fn run_oxford(
         openai_api_key,
         xai_api_key,
         600,
+        timeout,
         Some(&cost_tracker),
         None,
     )
@@ -241,6 +243,7 @@ pub async fn run_oxford(
         openai_api_key,
         xai_api_key,
         400,
+        timeout,
         Some(&cost_tracker),
         None,
     )

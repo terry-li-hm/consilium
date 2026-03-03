@@ -920,11 +920,13 @@ pub async fn query_model_with_fallback(
     openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
     max_tokens: u32,
+    timeout_secs: f64,
     retries: u32,
     cost_tracker: Option<&CostTracker>,
 ) -> (String, String, String) {
     let model_name = model.split('/').next_back().unwrap_or(model).to_string();
     let mut primary_response: Option<String> = None;
+    let timeout_secs = timeout_secs.max(if is_thinking_model(model) { 120.0 } else { 60.0 });
 
     // For GLM: try bigmodel.cn directly first (more reliable than OpenRouter z-ai)
     if let Some(("zhipu", zhipu_model)) = fallback {
@@ -935,7 +937,7 @@ pub async fn query_model_with_fallback(
                 zhipu_model,
                 messages,
                 max_tokens,
-                300.0,
+                timeout_secs,
                 retries,
             )
             .await;
@@ -956,7 +958,7 @@ pub async fn query_model_with_fallback(
                 openai_model,
                 messages,
                 max_tokens,
-                300.0,
+                timeout_secs,
                 retries,
             )
             .await;
@@ -977,7 +979,7 @@ pub async fn query_model_with_fallback(
                 moonshot_model,
                 messages,
                 max_tokens,
-                300.0,
+                timeout_secs,
                 retries,
             )
             .await;
@@ -998,7 +1000,7 @@ pub async fn query_model_with_fallback(
                 xai_model,
                 messages,
                 max_tokens,
-                300.0,
+                timeout_secs,
                 retries,
             )
             .await;
@@ -1019,7 +1021,7 @@ pub async fn query_model_with_fallback(
                 google_model,
                 messages,
                 max_tokens,
-                300.0,
+                timeout_secs,
                 retries,
             )
             .await;
@@ -1037,7 +1039,7 @@ pub async fn query_model_with_fallback(
         model,
         messages,
         max_tokens,
-        300.0,
+        timeout_secs,
         retries,
         cost_tracker,
     )
@@ -1073,6 +1075,7 @@ pub async fn query_model_async(
     openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
     max_tokens: u32,
+    timeout_secs: f64,
     retries: u32,
     cost_tracker: Option<&CostTracker>,
 ) -> (String, String, String) {
@@ -1089,6 +1092,7 @@ pub async fn query_model_async(
         openai_api_key,
         xai_api_key,
         max_tokens,
+        timeout_secs,
         retries,
         cost_tracker,
     )
@@ -1106,6 +1110,7 @@ pub async fn run_parallel(
     openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
     max_tokens: u32,
+    timeout_secs: f64,
     cost_tracker: Option<&CostTracker>,
     output: Option<&mut dyn Output>,
 ) -> Vec<(String, String, String)> {
@@ -1158,6 +1163,7 @@ pub async fn run_parallel(
                     openai_api_key.as_deref(),
                     xai_api_key.as_deref(),
                     max_tokens,
+                    timeout_secs,
                     2,
                     cost_tracker.as_ref(),
                 )
@@ -1208,6 +1214,7 @@ pub async fn run_parallel_with_different_messages(
     openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
     max_tokens: u32,
+    timeout_secs: f64,
     cost_tracker: Option<&CostTracker>,
     output: Option<&mut dyn Output>,
 ) -> Vec<(String, String, String)> {
@@ -1254,6 +1261,7 @@ pub async fn run_parallel_with_different_messages(
                     openai_api_key.as_deref(),
                     xai_api_key.as_deref(),
                     max_tokens,
+                    timeout_secs,
                     2,
                     cost_tracker.as_ref(),
                 )

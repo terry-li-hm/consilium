@@ -170,6 +170,7 @@ pub async fn run_discuss(
         openai_api_key,
         xai_api_key,
         500,
+        timeout,
         Some(&cost_tracker),
         None,
     )
@@ -421,6 +422,7 @@ pub async fn run_discuss(
         openai_api_key,
         xai_api_key,
         300,
+        timeout,
         Some(&cost_tracker),
         None,
     )

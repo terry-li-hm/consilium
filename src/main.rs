@@ -283,6 +283,7 @@ async fn main() {
                 openai_api_key.as_deref(),
                 xai_api_key.as_deref(),
                 rounds,
+                args.timeout,
                 &mut *output,
                 true,
                 true,

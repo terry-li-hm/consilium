@@ -60,6 +60,7 @@ pub async fn run_forecast(
         openai_api_key,
         xai_api_key,
         500,
+        timeout,
         Some(&cost_tracker),
         None,
     )
@@ -142,6 +143,7 @@ pub async fn run_forecast(
         openai_api_key,
         xai_api_key,
         600,
+        timeout,
         Some(&cost_tracker),
         None,
     )
