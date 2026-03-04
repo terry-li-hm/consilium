@@ -93,7 +93,7 @@ pub async fn query_model(
     let mut timeout_secs = timeout_secs;
 
     if is_thinking_model(model) {
-        max_tokens = max_tokens.max(2500);
+        max_tokens = max_tokens.max(16000);
         timeout_secs = timeout_secs.max(300.0);
     }
 
@@ -326,7 +326,7 @@ pub async fn query_bigmodel(
     let mut timeout_secs = timeout_secs;
 
     if is_thinking_model(model) {
-        max_tokens = max_tokens.max(2500);
+        max_tokens = max_tokens.max(16000);
         timeout_secs = timeout_secs.max(300.0);
     }
 
@@ -434,7 +434,7 @@ pub async fn query_moonshot(
     let mut timeout_secs = timeout_secs;
 
     if is_thinking_model(model) {
-        max_tokens = max_tokens.max(2500);
+        max_tokens = max_tokens.max(16000);
         timeout_secs = timeout_secs.max(300.0);
     }
 
@@ -542,7 +542,7 @@ pub async fn query_xai(
     let mut timeout_secs = timeout_secs;
 
     if is_thinking_model(model) {
-        max_tokens = max_tokens.max(2500);
+        max_tokens = max_tokens.max(16000);
         timeout_secs = timeout_secs.max(300.0);
     }
 
@@ -635,7 +635,7 @@ pub async fn query_openai(
     let mut timeout_secs = timeout_secs;
 
     if is_thinking_model(model) {
-        max_tokens = max_tokens.max(2500);
+        max_tokens = max_tokens.max(16000);
         timeout_secs = timeout_secs.max(300.0);
     }
 

@@ -254,7 +254,7 @@ pub fn per_model_max_tokens(model: &str, default: u32) -> u32 {
         env_override(GLM_MAX_TOKENS_ENV)
             .and_then(|value| value.parse::<u32>().ok())
             .filter(|value| *value > 0)
-            .unwrap_or(4096)
+            .unwrap_or(16000)
     } else {
         default
     }
