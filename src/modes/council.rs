@@ -1504,5 +1504,6 @@ pub async fn run_council(
         } else {
             Some(failed_models)
         },
+        extra: None,
     }
 }

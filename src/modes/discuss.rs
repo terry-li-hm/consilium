@@ -522,5 +522,6 @@ pub async fn run_discuss(
         cost,
         duration,
         failures: None,
+        extra: None,
     }
 }

@@ -11,6 +11,7 @@ pub struct SessionResult {
     pub cost: f64,
     pub duration: f64,
     pub failures: Option<Vec<String>>,
+    pub extra: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 /// Model entry: (display_name, openrouter_model, fallback).

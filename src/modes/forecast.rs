@@ -213,5 +213,6 @@ pub async fn run_forecast(
         cost,
         duration,
         failures: None,
+        extra: None,
     }
 }

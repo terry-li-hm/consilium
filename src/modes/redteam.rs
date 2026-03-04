@@ -268,5 +268,6 @@ pub async fn run_redteam(
         cost,
         duration,
         failures: None,
+        extra: None,
     }
 }

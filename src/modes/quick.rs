@@ -40,7 +40,7 @@ async fn run_quick_streaming(
     cost_tracker: &CostTracker,
     effort: Option<ReasoningEffort>,
     output: &mut dyn Output,
-) -> Vec<(String, String, String)> {
+) -> Vec<(String, String, String, u64)> {
     let client = Client::new();
     let _ = output.begin_phase("QUICK RESPONSES");
     let full_question = match context {
@@ -141,7 +141,7 @@ async fn run_quick_streaming(
         let _ = output.begin_participant(&model_name);
         let _ = output.write_str(&format!("### {model_name}\n{response}\n\n"));
         let _ = output.end_participant(&model_name, &response, elapsed_ms);
-        out.push((name, used_model_name, response));
+        out.push((name, used_model_name, response, elapsed_ms));
     }
 
     out
@@ -161,7 +161,7 @@ async fn run_quick_parallel(
     timeout: f64,
     cost_tracker: &CostTracker,
     effort: Option<ReasoningEffort>,
-) -> Vec<(String, String, String)> {
+) -> Vec<(String, String, String, u64)> {
     let client = Client::new();
     let mut pending = FuturesUnordered::new();
 
@@ -186,6 +186,7 @@ async fn run_quick_parallel(
         let effort = effort;
 
         pending.push(async move {
+            let start = Instant::now();
             let fallback_ref = fallback_owned.as_ref().map(|(p, m)| (p.as_str(), m.as_str()));
             let (speaker_name, used_model_name, response) = query_model_async(
                 &client,
@@ -207,7 +208,13 @@ async fn run_quick_parallel(
                 effort,
             )
             .await;
-            (idx, speaker_name, used_model_name, response.trim().to_string())
+            (
+                idx,
+                speaker_name,
+                used_model_name,
+                response.trim().to_string(),
+                start.elapsed().as_millis() as u64,
+            )
         });
     }
 
@@ -215,10 +222,10 @@ async fn run_quick_parallel(
     while let Some(result) = pending.next().await {
         out.push(result);
     }
-    out.sort_by_key(|(idx, _, _, _)| *idx);
+    out.sort_by_key(|(idx, _, _, _, _)| *idx);
     out.into_iter()
-        .map(|(_, speaker_name, used_model_name, response)| {
-            (speaker_name, used_model_name, response)
+        .map(|(_, speaker_name, used_model_name, response, elapsed_ms)| {
+            (speaker_name, used_model_name, response, elapsed_ms)
         })
         .collect()
 }
@@ -300,7 +307,7 @@ pub async fn run_quick(
 
     let failures: Vec<String> = results
         .iter()
-        .filter_map(|(_, model_name, response)| {
+        .filter_map(|(_, model_name, response, _)| {
             if is_error_response(response) {
                 Some(format!("{model_name}: {response}"))
             } else {
@@ -323,22 +330,24 @@ pub async fn run_quick(
         "json" | "yaml" => {
             let responses: Vec<_> = results
                 .iter()
-                .filter(|(_, _, response)| !is_error_response(response))
-                .map(|(_, model_name, response)| {
+                .filter(|(_, _, response, _)| !is_error_response(response))
+                .map(|(_, model_name, response, elapsed_ms)| {
                     json!({
                         "model": model_name,
                         "content": response,
+                        "duration_ms": elapsed_ms,
                     })
                 })
                 .collect();
 
             let errors: Vec<_> = results
                 .iter()
-                .filter(|(_, _, response)| is_error_response(response))
-                .map(|(_, model_name, response)| {
+                .filter(|(_, _, response, _)| is_error_response(response))
+                .map(|(_, model_name, response, elapsed_ms)| {
                     json!({
                         "model": model_name,
                         "error": response,
+                        "duration_ms": elapsed_ms,
                     })
                 })
                 .collect();
@@ -375,11 +384,18 @@ pub async fn run_quick(
         _ => {
             let parts: Vec<String> = results
                 .iter()
-                .map(|(_, model_name, response)| format!("### {model_name}\n{response}"))
+                .map(|(_, model_name, response, _)| format!("### {model_name}\n{response}"))
                 .collect();
             parts.join("\n\n")
         }
     };
+
+    let mut model_timings = serde_json::Map::new();
+    for (_, model_name, _, elapsed_ms) in &results {
+        model_timings.insert(model_name.clone(), serde_json::Value::from(*elapsed_ms));
+    }
+    let mut extra = serde_json::Map::new();
+    extra.insert("model_timings".into(), serde_json::Value::Object(model_timings));
 
     SessionResult {
         transcript,
@@ -390,5 +406,6 @@ pub async fn run_quick(
         } else {
             Some(failures)
         },
+        extra: Some(extra),
     }
 }

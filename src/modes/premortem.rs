@@ -212,5 +212,6 @@ pub async fn run_premortem(
         cost,
         duration,
         failures: None,
+        extra: None,
     }
 }

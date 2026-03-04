@@ -332,7 +332,7 @@ async fn main() {
         args.output.as_deref(),
         args.share,
         effective_quiet,
-        None,
+        result.extra.clone(),
     );
 
     std::process::exit(0);

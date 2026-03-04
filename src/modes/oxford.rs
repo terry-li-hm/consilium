@@ -329,5 +329,6 @@ pub async fn run_oxford(
         cost,
         duration,
         failures: None,
+        extra: None,
     }
 }
