@@ -112,6 +112,7 @@ consilium "Is consciousness computable?" --socratic
 --xpol                      Cross-pollination phase (council mode)
 --followup                  Interactive drill-down after synthesis (council mode)
 --rounds N                  Rounds for discuss/socratic (0 = unlimited)
+--effort low|medium|high    Per-phase reasoning effort for thinking models
 --thorough                  Disable early consensus exit
 --output file.md            Save transcript to file
 --format json|yaml|prose    Output format

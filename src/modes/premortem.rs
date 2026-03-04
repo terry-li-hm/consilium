@@ -56,6 +56,7 @@ pub async fn run_premortem(
         timeout,
         2,
         Some(&cost_tracker),
+        None,
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", host_setup));
@@ -97,6 +98,7 @@ pub async fn run_premortem(
         700,
         timeout,
         Some(&cost_tracker),
+        None,
         None,
     )
     .await;
@@ -142,6 +144,7 @@ pub async fn run_premortem(
         timeout,
         2,
         Some(&cost_tracker),
+        None,
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", host_synthesis));
@@ -186,6 +189,7 @@ pub async fn run_premortem(
         timeout,
         2,
         Some(&cost_tracker),
+        None,
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", host_mitigation));

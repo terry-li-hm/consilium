@@ -2,7 +2,8 @@
 
 use crate::api::{query_model, run_parallel_with_different_messages};
 use crate::config::{
-    resolved_judge_model, sanitize_speaker_content, CostTracker, Message, ModelEntry, SessionResult,
+    resolved_judge_model, sanitize_speaker_content, CostTracker, Message, ModelEntry,
+    ReasoningEffort, SessionResult,
 };
 use crate::prompts::{
     oxford_closing_system, oxford_constructive_system, oxford_judge_prior, oxford_judge_verdict,
@@ -27,6 +28,7 @@ pub async fn run_oxford(
     _format: &str,
     timeout: f64,
     output: &mut dyn Output,
+    effort: Option<ReasoningEffort>,
 ) -> SessionResult {
     let start = Instant::now();
     let cost_tracker = CostTracker::new();
@@ -60,6 +62,7 @@ pub async fn run_oxford(
             timeout,
             2,
             Some(&cost_tracker),
+            effort,
         )
         .await;
         let m = m.trim().trim_matches('"').to_string();
@@ -102,6 +105,7 @@ pub async fn run_oxford(
         timeout,
         2,
         Some(&cost_tracker),
+        effort,
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", prior_response));
@@ -143,6 +147,7 @@ pub async fn run_oxford(
         800,
         timeout,
         Some(&cost_tracker),
+        effort,
         None,
     )
     .await;
@@ -200,6 +205,7 @@ pub async fn run_oxford(
         600,
         timeout,
         Some(&cost_tracker),
+        effort,
         None,
     )
     .await;
@@ -249,6 +255,7 @@ pub async fn run_oxford(
         400,
         timeout,
         Some(&cost_tracker),
+        effort,
         None,
     )
     .await;
@@ -300,6 +307,7 @@ pub async fn run_oxford(
         timeout,
         2,
         Some(&cost_tracker),
+        effort,
     )
     .await;
 

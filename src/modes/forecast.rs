@@ -65,6 +65,7 @@ pub async fn run_forecast(
         timeout,
         Some(&cost_tracker),
         None,
+        None,
     )
     .await;
 
@@ -104,6 +105,7 @@ pub async fn run_forecast(
         timeout,
         2,
         Some(&cost_tracker),
+        None,
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", host_divergence));
@@ -149,6 +151,7 @@ pub async fn run_forecast(
         timeout,
         Some(&cost_tracker),
         None,
+        None,
     )
     .await;
 
@@ -188,6 +191,7 @@ pub async fn run_forecast(
         timeout,
         2,
         Some(&cost_tracker),
+        None,
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", host_distribution));

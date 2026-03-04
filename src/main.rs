@@ -4,6 +4,7 @@ use consilium::api::classify_mode;
 use consilium::cli::Cli;
 use consilium::config::{
     discuss_models, oxford_models, quick_models, redteam_models, resolved_council, CostTracker,
+    ReasoningEffort,
 };
 use consilium::modes::{council, discuss, forecast, oxford, premortem, quick, redteam};
 use consilium::session::{
@@ -127,6 +128,7 @@ async fn main() {
         }
         auto_mode
     };
+    let effort = args.effort.as_deref().and_then(ReasoningEffort::from_str);
 
     let color = std::env::var("NO_COLOR").is_err() && std::io::stdout().is_terminal();
     let mut output: Box<dyn consilium::session::Output> = if stdout_is_file_redirect() {
@@ -156,6 +158,7 @@ async fn main() {
                 &mut *output,
                 &args.format,
                 args.timeout,
+                effort,
             )
             .await
         }
@@ -174,6 +177,7 @@ async fn main() {
                 &args.format,
                 args.timeout,
                 &mut *output,
+                effort,
             )
             .await
         }
@@ -192,6 +196,7 @@ async fn main() {
                 &args.format,
                 args.timeout,
                 &mut *output,
+                effort,
             )
             .await
         }
@@ -249,6 +254,7 @@ async fn main() {
                 args.timeout,
                 &mut *output,
                 args.thorough,
+                effort,
             )
             .await
         }
@@ -306,6 +312,7 @@ async fn main() {
                 args.xpol,
                 args.followup,
                 args.thorough,
+                effort,
             )
             .await
         }

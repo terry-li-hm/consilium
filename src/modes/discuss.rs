@@ -2,7 +2,8 @@
 
 use crate::api::{query_model, run_parallel};
 use crate::config::{
-    sanitize_speaker_content, CostTracker, Message, ModelEntry, SessionResult, DISCUSS_HOST,
+    sanitize_speaker_content, CostTracker, Message, ModelEntry, ReasoningEffort, SessionResult,
+    DISCUSS_HOST,
 };
 use crate::prompts::{
     discuss_host_closing, discuss_host_framing, discuss_host_steer, discuss_panelist_closing,
@@ -19,6 +20,7 @@ async fn compress_round_context(
     client: &Client,
     api_key: &str,
     cost_tracker: &CostTracker,
+    effort: Option<ReasoningEffort>,
 ) -> String {
     let mut round_summary = String::new();
     for (name, response) in round_responses {
@@ -40,6 +42,7 @@ async fn compress_round_context(
         30.0,
         2,
         Some(cost_tracker),
+        effort,
     )
     .await;
 
@@ -72,6 +75,7 @@ pub async fn run_discuss(
     timeout: f64,
     output: &mut dyn Output,
     thorough: bool,
+    effort: Option<ReasoningEffort>,
 ) -> SessionResult {
     let start = Instant::now();
     let cost_tracker = CostTracker::new();
@@ -120,6 +124,7 @@ pub async fn run_discuss(
         timeout,
         2,
         Some(&cost_tracker),
+        effort,
     )
     .await;
 
@@ -174,6 +179,7 @@ pub async fn run_discuss(
         500,
         timeout,
         Some(&cost_tracker),
+        effort,
         None,
     )
     .await;
@@ -280,6 +286,7 @@ pub async fn run_discuss(
             timeout,
             2,
             Some(&cost_tracker),
+            effort,
         )
         .await;
 
@@ -357,6 +364,7 @@ pub async fn run_discuss(
                 timeout,
                 2,
                 Some(&cost_tracker),
+                effort,
             )
             .await;
 
@@ -374,8 +382,15 @@ pub async fn run_discuss(
             let round_responses = &conversation_history[round_start..];
             let _ = output.write_str(&format!("(compressing round {} context...)\n", round_num));
             let summary =
-                compress_round_context(round_responses, question, &client, api_key, &cost_tracker)
-                    .await;
+                compress_round_context(
+                    round_responses,
+                    question,
+                    &client,
+                    api_key,
+                    &cost_tracker,
+                    effort,
+                )
+                .await;
             compressed_summaries.push(summary);
         }
     }
@@ -427,6 +442,7 @@ pub async fn run_discuss(
         300,
         timeout,
         Some(&cost_tracker),
+        effort,
         None,
     )
     .await;
@@ -484,6 +500,7 @@ pub async fn run_discuss(
         timeout,
         2,
         Some(&cost_tracker),
+        effort,
     )
     .await;
 

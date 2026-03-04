@@ -2,8 +2,8 @@
 
 use crate::config::{
     fallback_also_failed_message, is_error_response, is_thinking_model, CostTracker, Message,
-    ModelEntry, ANTHROPIC_URL, ANTHROPIC_VERSION, BIGMODEL_URL, GOOGLE_AI_STUDIO_URL,
-    MOONSHOT_URL, OPENAI_RESPONSES_URL, OPENROUTER_URL, XAI_URL,
+    ModelEntry, ReasoningEffort, ANTHROPIC_URL, ANTHROPIC_VERSION, BIGMODEL_URL,
+    GOOGLE_AI_STUDIO_URL, MOONSHOT_URL, OPENAI_RESPONSES_URL, OPENROUTER_URL, XAI_URL,
 };
 use crate::session::Output;
 use futures_util::StreamExt;
@@ -26,6 +26,7 @@ pub async fn query_judge(
     retries: u32,
     cost_tracker: Option<&CostTracker>,
 ) -> String {
+    let effort = Some(ReasoningEffort::High);
     if model.contains("google/") || model.contains("gemini") {
         if let Ok(g_key) = std::env::var("GOOGLE_API_KEY") {
             if !g_key.trim().is_empty() {
@@ -38,6 +39,7 @@ pub async fn query_judge(
                     max_tokens,
                     timeout_secs,
                     retries,
+                    effort,
                 )
                 .await;
                 if !is_error_response(&response) {
@@ -56,6 +58,7 @@ pub async fn query_judge(
                     max_tokens,
                     timeout_secs,
                     retries,
+                    effort,
                 )
                 .await;
                 if !is_error_response(&response) {
@@ -74,6 +77,7 @@ pub async fn query_judge(
         timeout_secs,
         retries,
         cost_tracker,
+        effort,
     )
     .await
 }
@@ -88,6 +92,7 @@ pub async fn query_model(
     timeout_secs: f64,
     retries: u32,
     cost_tracker: Option<&CostTracker>,
+    effort: Option<ReasoningEffort>,
 ) -> String {
     let mut max_tokens = max_tokens;
     let mut timeout_secs = timeout_secs;
@@ -103,15 +108,20 @@ pub async fn query_model(
             sleep(Duration::from_secs_f64(backoff)).await;
         }
 
+        let mut body = serde_json::json!({
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+        });
+        if let Some(effort) = effort {
+            body["reasoning"] = serde_json::json!({ "effort": effort.as_str() });
+        }
+
         let result = client
             .post(OPENROUTER_URL)
             .header("Authorization", format!("Bearer {api_key}"))
             .timeout(Duration::from_secs_f64(timeout_secs))
-            .json(&serde_json::json!({
-                "model": model,
-                "messages": messages,
-                "max_tokens": max_tokens,
-            }))
+            .json(&body)
             .send()
             .await;
 
@@ -206,6 +216,7 @@ pub async fn query_google_ai_studio(
     max_tokens: u32,
     timeout_secs: f64,
     retries: u32,
+    effort: Option<ReasoningEffort>,
 ) -> String {
     let mut contents = Vec::new();
     let mut system_instruction: Option<String> = None;
@@ -231,6 +242,10 @@ pub async fn query_google_ai_studio(
             "maxOutputTokens": max_tokens,
         }
     });
+    if let Some(effort) = effort {
+        body["generationConfig"]["thinkingConfig"] =
+            serde_json::json!({ "thinkingBudget": effort.google_budget() });
+    }
 
     if let Some(ref sys) = system_instruction {
         body["systemInstruction"] = serde_json::json!({"parts": [{"text": sys}]});
@@ -537,6 +552,7 @@ pub async fn query_xai(
     max_tokens: u32,
     timeout_secs: f64,
     retries: u32,
+    effort: Option<ReasoningEffort>,
 ) -> String {
     let mut max_tokens = max_tokens;
     let mut timeout_secs = timeout_secs;
@@ -552,15 +568,20 @@ pub async fn query_xai(
             sleep(Duration::from_secs_f64(backoff)).await;
         }
 
+        let mut body = serde_json::json!({
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+        });
+        if let Some(effort) = effort {
+            body["reasoning_effort"] = serde_json::json!(effort.as_str());
+        }
+
         let result = client
             .post(XAI_URL)
             .header("Authorization", format!("Bearer {api_key}"))
             .timeout(Duration::from_secs_f64(timeout_secs))
-            .json(&serde_json::json!({
-                "model": model,
-                "messages": messages,
-                "max_tokens": max_tokens,
-            }))
+            .json(&body)
             .send()
             .await;
 
@@ -630,6 +651,7 @@ pub async fn query_openai(
     max_tokens: u32,
     timeout_secs: f64,
     retries: u32,
+    effort: Option<ReasoningEffort>,
 ) -> String {
     let mut max_tokens = max_tokens;
     let mut timeout_secs = timeout_secs;
@@ -645,15 +667,20 @@ pub async fn query_openai(
             sleep(Duration::from_secs_f64(backoff)).await;
         }
 
+        let mut body = serde_json::json!({
+            "model": model,
+            "input": messages,
+            "max_output_tokens": max_tokens,
+        });
+        if let Some(effort) = effort {
+            body["reasoning"] = serde_json::json!({ "effort": effort.as_str() });
+        }
+
         let result = client
             .post(OPENAI_RESPONSES_URL)
             .header("Authorization", format!("Bearer {api_key}"))
             .timeout(Duration::from_secs_f64(timeout_secs))
-            .json(&serde_json::json!({
-                "model": model,
-                "input": messages,
-                "max_output_tokens": max_tokens,
-            }))
+            .json(&body)
             .send()
             .await;
 
@@ -732,14 +759,32 @@ pub async fn query_anthropic(
     max_tokens: u32,
     timeout_secs: f64,
     retries: u32,
+    effort: Option<ReasoningEffort>,
 ) -> String {
     // Strip "anthropic/" prefix if present (OpenRouter format → bare model name)
     let model = model.strip_prefix("anthropic/").unwrap_or(model);
+    let mut max_tokens = max_tokens;
+    let thinking_budget = effort.map(|e| e.anthropic_budget());
+    if let Some(budget_tokens) = thinking_budget {
+        max_tokens = max_tokens.max(budget_tokens + 2000);
+    }
 
     for attempt in 0..=retries {
         if attempt > 0 {
             let backoff = (2u64.pow(attempt)) as f64 + rand::random::<f64>();
             sleep(Duration::from_secs_f64(backoff)).await;
+        }
+
+        let mut body = serde_json::json!({
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+        });
+        if let Some(budget_tokens) = thinking_budget {
+            body["thinking"] = serde_json::json!({
+                "type": "enabled",
+                "budget_tokens": budget_tokens,
+            });
         }
 
         let result = client
@@ -748,11 +793,7 @@ pub async fn query_anthropic(
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("content-type", "application/json")
             .timeout(Duration::from_secs_f64(timeout_secs))
-            .json(&serde_json::json!({
-                "model": model,
-                "messages": messages,
-                "max_tokens": max_tokens,
-            }))
+            .json(&body)
             .send()
             .await;
 
@@ -817,21 +858,29 @@ pub async fn query_model_streaming(
     max_tokens: u32,
     timeout_secs: f64,
     cost_tracker: Option<&CostTracker>,
+    effort: Option<ReasoningEffort>,
     output: &mut dyn Output,
 ) -> String {
     let mut full_content = Vec::new();
     let mut in_think_block = false;
 
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "stream": true,
+    });
+    if let Some(effort) = effort {
+        body["reasoning"] = serde_json::json!({
+            "effort": effort.as_str(),
+        });
+    }
+
     let result = client
         .post(OPENROUTER_URL)
         .header("Authorization", format!("Bearer {api_key}"))
         .timeout(Duration::from_secs_f64(timeout_secs))
-        .json(&serde_json::json!({
-            "model": model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "stream": true,
-        }))
+        .json(&body)
         .send()
         .await;
 
@@ -975,6 +1024,7 @@ pub async fn query_model_with_fallback(
     timeout_secs: f64,
     retries: u32,
     cost_tracker: Option<&CostTracker>,
+    effort: Option<ReasoningEffort>,
 ) -> (String, String, String) {
     let model_name = model.split('/').next_back().unwrap_or(model).to_string();
     let mut primary_response: Option<String> = None;
@@ -991,6 +1041,7 @@ pub async fn query_model_with_fallback(
                 max_tokens,
                 timeout_secs,
                 retries,
+                effort,
             )
             .await;
             if !is_error_response(&response) {
@@ -1033,6 +1084,7 @@ pub async fn query_model_with_fallback(
                 max_tokens,
                 timeout_secs,
                 retries,
+                effort,
             )
             .await;
             if !is_error_response(&response) {
@@ -1075,6 +1127,7 @@ pub async fn query_model_with_fallback(
                 max_tokens,
                 timeout_secs,
                 retries,
+                effort,
             )
             .await;
             if !is_error_response(&response) {
@@ -1096,6 +1149,7 @@ pub async fn query_model_with_fallback(
                 max_tokens,
                 timeout_secs,
                 retries,
+                effort,
             )
             .await;
             if !is_error_response(&response) {
@@ -1115,6 +1169,7 @@ pub async fn query_model_with_fallback(
         timeout_secs,
         retries,
         cost_tracker,
+        effort,
     )
     .await;
 
@@ -1152,6 +1207,7 @@ pub async fn query_model_async(
     timeout_secs: f64,
     retries: u32,
     cost_tracker: Option<&CostTracker>,
+    effort: Option<ReasoningEffort>,
 ) -> (String, String, String) {
     query_model_with_fallback(
         client,
@@ -1170,6 +1226,7 @@ pub async fn query_model_async(
         timeout_secs,
         retries,
         cost_tracker,
+        effort,
     )
     .await
 }
@@ -1188,6 +1245,7 @@ pub async fn run_parallel(
     max_tokens: u32,
     timeout_secs: f64,
     cost_tracker: Option<&CostTracker>,
+    effort: Option<ReasoningEffort>,
     output: Option<&mut dyn Output>,
 ) -> Vec<(String, String, String)> {
     let client = Client::new();
@@ -1222,6 +1280,7 @@ pub async fn run_parallel(
             let fallback_owned: Option<(String, String)> =
                 fallback.map(|(p, m)| (p.to_string(), m.to_string()));
             let cost_tracker = cost_tracker.cloned();
+            let effort = effort;
 
             tokio::spawn(async move {
                 let fallback_ref: Option<(&str, &str)> = fallback_owned
@@ -1244,6 +1303,7 @@ pub async fn run_parallel(
                     timeout_secs,
                     2,
                     cost_tracker.as_ref(),
+                    effort,
                 )
                 .await;
 
@@ -1295,6 +1355,7 @@ pub async fn run_parallel_with_different_messages(
     max_tokens: u32,
     timeout_secs: f64,
     cost_tracker: Option<&CostTracker>,
+    effort: Option<ReasoningEffort>,
     output: Option<&mut dyn Output>,
 ) -> Vec<(String, String, String)> {
     assert_eq!(
@@ -1323,6 +1384,7 @@ pub async fn run_parallel_with_different_messages(
             let fallback_owned: Option<(String, String)> =
                 fallback.map(|(p, m)| (p.to_string(), m.to_string()));
             let cost_tracker = cost_tracker.cloned();
+            let effort = effort;
 
             tokio::spawn(async move {
                 let fallback_ref: Option<(&str, &str)> = fallback_owned
@@ -1345,6 +1407,7 @@ pub async fn run_parallel_with_different_messages(
                     timeout_secs,
                     2,
                     cost_tracker.as_ref(),
+                    effort,
                 )
                 .await;
 
@@ -1419,6 +1482,7 @@ pub async fn classify_mode(
         15.0,
         2,
         cost_tracker,
+        None,
     )
     .await;
 

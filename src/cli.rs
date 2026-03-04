@@ -86,6 +86,10 @@ pub struct Cli {
     #[arg(long, help_heading = "Deliberation")]
     pub followup: bool,
 
+    /// Reasoning effort for thinking models: low, medium, high
+    #[arg(long, help_heading = "Deliberation")]
+    pub effort: Option<String>,
+
     /// Skip early consensus exit and context compression (full deliberation)
     #[arg(long, help_heading = "Deliberation")]
     pub thorough: bool,

@@ -32,6 +32,55 @@ pub const OPENAI_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 pub const ANTHROPIC_URL: &str = "https://api.anthropic.com/v1/messages";
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ReasoningEffort {
+    Low,
+    Medium,
+    High,
+}
+
+impl ReasoningEffort {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
+            "high" => Some(Self::High),
+            _ => None,
+        }
+    }
+
+    pub fn step_down(self) -> Self {
+        match self {
+            Self::High => Self::Medium,
+            _ => Self::Low,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+
+    pub fn anthropic_budget(self) -> u32 {
+        match self {
+            Self::Low => 1024,
+            Self::Medium => 8192,
+            Self::High => 32000,
+        }
+    }
+
+    pub fn google_budget(self) -> i64 {
+        match self {
+            Self::Low => 512,
+            Self::Medium => 4096,
+            Self::High => 16000,
+        }
+    }
+}
+
 // Council: 5 panelists (Gemini is judge; Claude is M2 panelist + critique)
 // Fallback routing based on HK latency benchmark (2026-03-04):
 //   GPT: None — gpt-5.2-pro returns 404 on OpenAI chat/completions (not a chat model)

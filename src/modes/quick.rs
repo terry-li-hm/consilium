@@ -3,7 +3,7 @@
 use crate::api::{query_model_async, query_model_streaming};
 use crate::config::{
     fallback_also_failed_message, is_error_response, per_model_max_tokens, CostTracker, Message,
-    ModelEntry, SessionResult,
+    ModelEntry, ReasoningEffort, SessionResult,
 };
 use crate::session::Output;
 use chrono::Local;
@@ -38,6 +38,7 @@ async fn run_quick_streaming(
     max_tokens: u32,
     timeout: f64,
     cost_tracker: &CostTracker,
+    effort: Option<ReasoningEffort>,
     output: &mut dyn Output,
 ) -> Vec<(String, String, String)> {
     let client = Client::new();
@@ -70,6 +71,7 @@ async fn run_quick_streaming(
         let xai_api_key = xai_api_key.map(|s| s.to_string());
         let anthropic_api_key = anthropic_api_key.map(|s| s.to_string());
         let cost_tracker = cost_tracker.clone();
+        let effort = effort;
 
         pending.push(async move {
             let participant_start = Instant::now();
@@ -83,6 +85,7 @@ async fn run_quick_streaming(
                 model_max_tokens,
                 timeout,
                 Some(&cost_tracker),
+                effort,
                 &mut null_output,
             )
             .await;
@@ -110,6 +113,7 @@ async fn run_quick_streaming(
                     timeout,
                     2,
                     Some(&cost_tracker),
+                    effort,
                 )
                 .await;
 
@@ -156,6 +160,7 @@ async fn run_quick_parallel(
     max_tokens: u32,
     timeout: f64,
     cost_tracker: &CostTracker,
+    effort: Option<ReasoningEffort>,
 ) -> Vec<(String, String, String)> {
     let client = Client::new();
     let mut pending = FuturesUnordered::new();
@@ -178,6 +183,7 @@ async fn run_quick_parallel(
         let xai_api_key = xai_api_key.map(|s| s.to_string());
         let anthropic_api_key = anthropic_api_key.map(|s| s.to_string());
         let cost_tracker = cost_tracker.clone();
+        let effort = effort;
 
         pending.push(async move {
             let fallback_ref = fallback_owned.as_ref().map(|(p, m)| (p.as_str(), m.as_str()));
@@ -198,6 +204,7 @@ async fn run_quick_parallel(
                 timeout,
                 2,
                 Some(&cost_tracker),
+                effort,
             )
             .await;
             (idx, speaker_name, used_model_name, response.trim().to_string())
@@ -230,6 +237,7 @@ pub async fn run_quick(
     output: &mut dyn Output,
     format: &str,
     timeout: f64,
+    effort: Option<ReasoningEffort>,
 ) -> SessionResult {
     let start = Instant::now();
     let cost_tracker = CostTracker::new();
@@ -264,6 +272,7 @@ pub async fn run_quick(
             2048,
             timeout,
             &cost_tracker,
+            effort,
             output,
         )
         .await
@@ -281,6 +290,7 @@ pub async fn run_quick(
             2048,
             timeout,
             &cost_tracker,
+            effort,
         )
         .await
     };

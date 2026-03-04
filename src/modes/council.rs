@@ -4,7 +4,7 @@ use crate::api::{query_judge, query_model, query_model_async, run_parallel};
 use crate::config::{
     detect_consensus, detect_social_context, is_error_response, parse_confidence,
     resolved_judge_model, sanitize_speaker_content, CostTracker, Message, ModelEntry,
-    resolved_critique_model, SessionResult, EXTRACTION_MODEL,
+    resolved_critique_model, ReasoningEffort, SessionResult, EXTRACTION_MODEL,
 };
 use crate::prompts::{
     council_blind_system, council_challenger_addition, council_debate_system,
@@ -223,6 +223,7 @@ pub async fn extract_structured_summary(
             30.0,
             2,
             cost_tracker,
+            None,
         )
         .await
         .trim()
@@ -365,6 +366,7 @@ pub async fn decompose_question(
         120.0,
         2,
         Some(cost_tracker),
+        None,
     )
     .await;
 
@@ -429,6 +431,7 @@ async fn compress_round_context(
         30.0,
         2,
         Some(cost_tracker),
+        None,
     )
     .await;
 
@@ -460,6 +463,7 @@ async fn run_blind_phase_parallel(
     domain_hint: Option<&str>,
     sub_questions: Option<&[String]>,
     cost_tracker: &CostTracker,
+    effort: Option<ReasoningEffort>,
 ) -> Vec<(String, String, String)> {
     let mut blind_system = council_blind_system();
     blind_system = append_optional_context(blind_system, domain_hint, false, persona);
@@ -498,6 +502,7 @@ async fn run_blind_phase_parallel(
         1500,
         timeout,
         Some(cost_tracker),
+        effort,
         None,
     )
     .await;
@@ -529,6 +534,7 @@ async fn run_xpol_phase_parallel(
     domain_hint: Option<&str>,
     display_names: &HashMap<String, String>,
     cost_tracker: &CostTracker,
+    effort: Option<ReasoningEffort>,
 ) -> Vec<(String, String, String)> {
     let mut xpol_system = council_xpol_system();
     xpol_system = append_optional_context(xpol_system, domain_hint, false, persona);
@@ -572,6 +578,7 @@ async fn run_xpol_phase_parallel(
         1500,
         timeout,
         Some(cost_tracker),
+        effort,
         None,
     )
     .await;
@@ -603,6 +610,7 @@ pub async fn run_followup_discussion(
     persona: Option<&str>,
     output: &mut dyn Output,
     cost_tracker: &CostTracker,
+    effort: Option<ReasoningEffort>,
 ) -> String {
     let client = Client::new();
     let followup_models = &council_config[..council_config.len().min(2)];
@@ -657,6 +665,7 @@ pub async fn run_followup_discussion(
             timeout,
             2,
             Some(cost_tracker),
+            effort,
         )
         .await;
 
@@ -701,6 +710,7 @@ pub async fn run_council(
     cross_pollinate: bool,
     followup: bool,
     thorough: bool,
+    effort: Option<ReasoningEffort>,
 ) -> SessionResult {
     let start = Instant::now();
     let client = Client::new();
@@ -731,6 +741,7 @@ pub async fn run_council(
             domain_hint,
             sub_questions.as_deref(),
             &cost_tracker,
+            effort,
         )
         .await;
 
@@ -835,6 +846,7 @@ pub async fn run_council(
             domain_hint,
             &display_names,
             &cost_tracker,
+            effort,
         )
         .await;
 
@@ -1016,6 +1028,7 @@ pub async fn run_council(
                 timeout,
                 2,
                 Some(&cost_tracker),
+                effort.map(|e| e.step_down()),
             )
             .await;
 
@@ -1306,6 +1319,7 @@ pub async fn run_council(
                 300.0,
                 2,
                 Some(&cost_tracker),
+                effort,
             )
             .await;
 
@@ -1420,6 +1434,7 @@ pub async fn run_council(
             persona,
             output,
             &cost_tracker,
+            effort,
         )
         .await;
 
