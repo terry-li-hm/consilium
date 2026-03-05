@@ -102,9 +102,13 @@ pub struct Cli {
     #[arg(long, default_value = "prose", help_heading = "Output")]
     pub format: String,
 
-    /// Share session as secret GitHub gist
+    /// Share session as secret GitHub gist, or (with --push) make web run public and print URL
     #[arg(long, help_heading = "Output")]
     pub share: bool,
+
+    /// Push completed run to consilium.sh (requires CONSILIUM_API_KEY)
+    #[arg(long, help_heading = "Output")]
+    pub push: bool,
 
     /// Don't auto-save session
     #[arg(long, help_heading = "Output")]

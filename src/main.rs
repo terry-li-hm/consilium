@@ -8,7 +8,8 @@ use consilium::config::{
 };
 use consilium::modes::{council, discuss, forecast, oxford, premortem, quick, redteam};
 use consilium::session::{
-    finish_session, prepare_live_session_path, setup_live_output, AgentOutput, HumanOutput,
+    finish_session, prepare_live_session_path, push_to_web, setup_live_output, AgentOutput,
+    HumanOutput,
 };
 use std::io::IsTerminal;
 use std::os::unix::io::AsRawFd;
@@ -330,10 +331,33 @@ async fn main() {
         args.no_save,
         args.vault || args.deep || mode == "premortem" || mode == "deep",
         args.output.as_deref(),
-        args.share,
+        args.share && !args.push, // gist share only when not using web push
         effective_quiet,
         result.extra.clone(),
     );
+
+    if args.push {
+        // Build a minimal run payload compatible with the consilium.sh CLI API
+        let run_id = uuid::Uuid::new_v4().to_string();
+        let run_json = serde_json::json!({
+            "id": run_id,
+            "question": question,
+            "mode": mode,
+            "phase": "done",
+            "transcript": result.transcript,
+            "cost": result.cost,
+            "duration": result.duration,
+        });
+        match push_to_web(&run_json, args.share).await {
+            Ok(Some(url)) => println!("\nShared: {url}"),
+            Ok(None) => {
+                if !effective_quiet {
+                    println!("\nPushed to consilium.sh");
+                }
+            }
+            Err(e) => eprintln!("Push failed: {e}"),
+        }
+    }
 
     std::process::exit(0);
 }

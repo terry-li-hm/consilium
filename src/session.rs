@@ -640,6 +640,44 @@ pub fn share_gist(question: &str, transcript: &str, mode: &str, quiet: bool) -> 
     }
 }
 
+/// Push a completed run to consilium.sh via the CLI API.
+/// If `share` is true, also makes the run public and returns the shareable URL.
+/// Requires `CONSILIUM_API_KEY` env var; uses `CONSILIUM_API_URL` override for testing.
+pub async fn push_to_web(run_json: &serde_json::Value, share: bool) -> anyhow::Result<Option<String>> {
+    use anyhow::Context as _;
+
+    let api_key = std::env::var("CONSILIUM_API_KEY")
+        .context("CONSILIUM_API_KEY not set — generate one at consilium.sh/settings")?;
+    let base = std::env::var("CONSILIUM_API_URL")
+        .unwrap_or_else(|_| "https://consilium.sh".to_string());
+
+    let client = reqwest::Client::new();
+
+    let run_id = run_json["id"].as_str().unwrap_or("").to_string();
+
+    // Push the run
+    client
+        .post(format!("{base}/api/cli/runs"))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(run_json)
+        .send()
+        .await?
+        .error_for_status()?;
+
+    if share && !run_id.is_empty() {
+        let res = client
+            .post(format!("{base}/api/cli/runs/{run_id}/share"))
+            .header("Authorization", format!("Bearer {api_key}"))
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+        return Ok(res["url"].as_str().map(String::from));
+    }
+
+    Ok(None)
+}
+
 pub fn log_history(
     question: &str,
     mode: &str,
