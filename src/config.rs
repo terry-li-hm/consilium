@@ -298,6 +298,28 @@ pub fn is_error_response(content: &str) -> bool {
                 || content.starts_with("[Model still thinking")))
 }
 
+/// Returns the known maximum output tokens for each model family.
+pub fn model_max_output_tokens(model: &str) -> u32 {
+    let m = model.to_ascii_lowercase();
+    if m.contains("gemini-2.5") || m.contains("gemini-3") {
+        65536
+    } else if m.contains("gemini") {
+        8192
+    } else if m.contains("claude") || m.contains("anthropic") {
+        32000
+    } else if m.contains("gpt") || m.contains("openai") {
+        16384
+    } else if m.contains("grok") || m.contains("xai") {
+        32768
+    } else if m.contains("kimi") || m.contains("moonshot") {
+        16384
+    } else if m.contains("glm") || m.contains("zhipu") {
+        16000
+    } else {
+        8192 // default fallback
+    }
+}
+
 /// Resolve per-model token budget overrides.
 pub fn per_model_max_tokens(model: &str, default: u32) -> u32 {
     if model.to_ascii_lowercase().contains("glm") {
@@ -508,6 +530,19 @@ impl Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_model_max_output_tokens() {
+        assert_eq!(model_max_output_tokens("google/gemini-2.5-pro"), 65536);
+        assert_eq!(model_max_output_tokens("google/gemini-3.1-pro"), 65536);
+        assert_eq!(model_max_output_tokens("google/gemini-1.5-pro"), 8192);
+        assert_eq!(model_max_output_tokens("anthropic/claude-3-opus"), 32000);
+        assert_eq!(model_max_output_tokens("openai/gpt-4o"), 16384);
+        assert_eq!(model_max_output_tokens("x-ai/grok-2"), 32768);
+        assert_eq!(model_max_output_tokens("moonshotai/kimi-v1"), 16384);
+        assert_eq!(model_max_output_tokens("z-ai/glm-4"), 16000);
+        assert_eq!(model_max_output_tokens("meta-llama/llama-3"), 8192);
+    }
 
     #[test]
     fn test_display_name_from_model_examples() {

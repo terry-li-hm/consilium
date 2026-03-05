@@ -2,8 +2,8 @@
 
 use crate::api::{query_model, run_parallel};
 use crate::config::{
-    sanitize_speaker_content, CostTracker, Message, ModelEntry, ReasoningEffort, SessionResult,
-    DISCUSS_HOST,
+    model_max_output_tokens, sanitize_speaker_content, CostTracker, Message, ModelEntry,
+    ReasoningEffort, SessionResult, DISCUSS_HOST,
 };
 use crate::prompts::{
     discuss_host_closing, discuss_host_framing, discuss_host_steer, discuss_panelist_closing,
@@ -38,7 +38,7 @@ async fn compress_round_context(
         api_key,
         crate::config::COMPRESSION_MODEL,
         &messages,
-        500,
+        model_max_output_tokens(crate::config::COMPRESSION_MODEL),
         30.0,
         2,
         Some(cost_tracker),
@@ -120,7 +120,7 @@ pub async fn run_discuss(
         api_key,
         DISCUSS_HOST,
         &framing_messages,
-        500,
+        model_max_output_tokens(DISCUSS_HOST),
         timeout,
         2,
         Some(&cost_tracker),
@@ -282,7 +282,7 @@ pub async fn run_discuss(
             api_key,
             DISCUSS_HOST,
             &steer_messages,
-            300,
+            model_max_output_tokens(DISCUSS_HOST),
             timeout,
             2,
             Some(&cost_tracker),
@@ -360,7 +360,7 @@ pub async fn run_discuss(
                 api_key,
                 model,
                 &panelist_messages,
-                150,
+                model_max_output_tokens(model).min(150),
                 timeout,
                 2,
                 Some(&cost_tracker),
@@ -496,7 +496,7 @@ pub async fn run_discuss(
         api_key,
         DISCUSS_HOST,
         &closing_host_messages,
-        if is_socratic { 400 } else { 300 },
+        model_max_output_tokens(DISCUSS_HOST),
         timeout,
         2,
         Some(&cost_tracker),

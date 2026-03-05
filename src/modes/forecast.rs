@@ -2,7 +2,8 @@
 
 use crate::api::{query_model, run_parallel_with_different_messages};
 use crate::config::{
-    sanitize_speaker_content, CostTracker, Message, ModelEntry, SessionResult, DISCUSS_HOST,
+    model_max_output_tokens, sanitize_speaker_content, CostTracker, Message, ModelEntry,
+    SessionResult, DISCUSS_HOST,
 };
 use crate::prompts::{
     forecast_blind_system, forecast_host_divergence, forecast_host_synthesis,
@@ -101,7 +102,7 @@ pub async fn run_forecast(
         api_key,
         DISCUSS_HOST,
         &divergence_messages,
-        1500,
+        model_max_output_tokens(DISCUSS_HOST),
         timeout,
         2,
         Some(&cost_tracker),
@@ -187,7 +188,7 @@ pub async fn run_forecast(
         api_key,
         DISCUSS_HOST,
         &synthesis_messages,
-        1500,
+        model_max_output_tokens(DISCUSS_HOST),
         timeout,
         2,
         Some(&cost_tracker),

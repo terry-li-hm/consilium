@@ -1,9 +1,9 @@
 //! HTTP clients, SSE streaming, parallel queries, retry, and fallback.
 
 use crate::config::{
-    fallback_also_failed_message, is_error_response, is_thinking_model, CostTracker, Message,
-    ModelEntry, ReasoningEffort, ANTHROPIC_URL, ANTHROPIC_VERSION, BIGMODEL_URL,
-    GOOGLE_AI_STUDIO_URL, MOONSHOT_URL, OPENAI_RESPONSES_URL, OPENROUTER_URL, XAI_URL,
+    fallback_also_failed_message, is_error_response, is_thinking_model, model_max_output_tokens,
+    CostTracker, Message, ModelEntry, ReasoningEffort, ANTHROPIC_URL, ANTHROPIC_VERSION,
+    BIGMODEL_URL, GOOGLE_AI_STUDIO_URL, MOONSHOT_URL, OPENAI_RESPONSES_URL, OPENROUTER_URL, XAI_URL,
 };
 use crate::session::Output;
 use futures_util::StreamExt;
@@ -1299,7 +1299,7 @@ pub async fn run_parallel(
                     openai_api_key.as_deref(),
                     xai_api_key.as_deref(),
                     anthropic_api_key.as_deref(),
-                    max_tokens,
+                    model_max_output_tokens(&model).min(max_tokens),
                     timeout_secs,
                     2,
                     cost_tracker.as_ref(),
@@ -1403,7 +1403,7 @@ pub async fn run_parallel_with_different_messages(
                     openai_api_key.as_deref(),
                     xai_api_key.as_deref(),
                     anthropic_api_key.as_deref(),
-                    max_tokens,
+                    model_max_output_tokens(&model).min(max_tokens),
                     timeout_secs,
                     2,
                     cost_tracker.as_ref(),
@@ -1478,7 +1478,7 @@ pub async fn classify_mode(
         api_key,
         crate::config::CLASSIFIER_MODEL,
         &messages,
-        10,
+        model_max_output_tokens(crate::config::CLASSIFIER_MODEL).min(10),
         15.0,
         2,
         cost_tracker,

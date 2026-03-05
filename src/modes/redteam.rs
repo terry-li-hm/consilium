@@ -2,8 +2,8 @@
 
 use crate::api::{query_model, run_parallel_with_different_messages};
 use crate::config::{
-    sanitize_speaker_content, CostTracker, Message, ModelEntry, ReasoningEffort, SessionResult,
-    DISCUSS_HOST,
+    model_max_output_tokens, sanitize_speaker_content, CostTracker, Message, ModelEntry,
+    ReasoningEffort, SessionResult, DISCUSS_HOST,
 };
 use crate::prompts::{
     redteam_attacker_deepen, redteam_attacker_system, redteam_host_analysis, redteam_host_deepen,
@@ -54,7 +54,7 @@ pub async fn run_redteam(
         api_key,
         DISCUSS_HOST,
         &analysis_messages,
-        500,
+        model_max_output_tokens(DISCUSS_HOST),
         timeout,
         2,
         Some(&cost_tracker),
@@ -141,7 +141,7 @@ pub async fn run_redteam(
         api_key,
         DISCUSS_HOST,
         &deepen_messages,
-        500,
+        model_max_output_tokens(DISCUSS_HOST),
         timeout,
         2,
         Some(&cost_tracker),
@@ -202,7 +202,7 @@ pub async fn run_redteam(
             api_key,
             model,
             &deepen_attacker_messages,
-            600,
+            model_max_output_tokens(model).min(600),
             timeout,
             2,
             Some(&cost_tracker),
@@ -243,7 +243,7 @@ pub async fn run_redteam(
         api_key,
         DISCUSS_HOST,
         &triage_messages,
-        800,
+        model_max_output_tokens(DISCUSS_HOST),
         timeout,
         2,
         Some(&cost_tracker),

@@ -8,7 +8,7 @@ fn test_version() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("--version-flag");
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("consilium 0.5.2"));
+        .stdout(predicate::str::contains("consilium 0.5.3"));
     Ok(())
 }
 

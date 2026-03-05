@@ -2,7 +2,8 @@
 
 use crate::api::{query_model, run_parallel_with_different_messages};
 use crate::config::{
-    sanitize_speaker_content, CostTracker, Message, ModelEntry, SessionResult, DISCUSS_HOST,
+    model_max_output_tokens, sanitize_speaker_content, CostTracker, Message, ModelEntry,
+    SessionResult, DISCUSS_HOST,
 };
 use crate::prompts::{
     premortem_host_framing, premortem_host_mitigation, premortem_host_synthesis,
@@ -52,7 +53,7 @@ pub async fn run_premortem(
         api_key,
         DISCUSS_HOST,
         &setup_messages,
-        500,
+        model_max_output_tokens(DISCUSS_HOST),
         timeout,
         2,
         Some(&cost_tracker),
@@ -140,7 +141,7 @@ pub async fn run_premortem(
         api_key,
         DISCUSS_HOST,
         &synthesis_messages,
-        700,
+        model_max_output_tokens(DISCUSS_HOST),
         timeout,
         2,
         Some(&cost_tracker),
@@ -185,7 +186,7 @@ pub async fn run_premortem(
         api_key,
         DISCUSS_HOST,
         &mitigation_messages,
-        800,
+        model_max_output_tokens(DISCUSS_HOST),
         timeout,
         2,
         Some(&cost_tracker),

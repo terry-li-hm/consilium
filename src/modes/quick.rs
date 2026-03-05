@@ -2,8 +2,8 @@
 
 use crate::api::{query_model_async, query_model_streaming};
 use crate::config::{
-    fallback_also_failed_message, is_error_response, per_model_max_tokens, CostTracker, Message,
-    ModelEntry, ReasoningEffort, SessionResult,
+    fallback_also_failed_message, is_error_response, model_max_output_tokens,
+    per_model_max_tokens, CostTracker, Message, ModelEntry, ReasoningEffort, SessionResult,
 };
 use crate::session::Output;
 use chrono::Local;
@@ -59,7 +59,8 @@ async fn run_quick_streaming(
         let name = name.to_string();
         let model = model.to_string();
         let model_name = model.split('/').next_back().unwrap_or(&model).to_string();
-        let model_max_tokens = per_model_max_tokens(&model, max_tokens);
+        let model_max_tokens =
+            model_max_output_tokens(&model).min(per_model_max_tokens(&model, max_tokens));
         let fallback_owned: Option<(String, String)> =
             fallback.map(|(provider, fallback_model)| {
                 (provider.to_string(), fallback_model.to_string())
@@ -171,7 +172,8 @@ async fn run_quick_parallel(
         let messages = messages.to_vec();
         let name = name.to_string();
         let model = model.to_string();
-        let model_max_tokens = per_model_max_tokens(&model, max_tokens);
+        let model_max_tokens =
+            model_max_output_tokens(&model).min(per_model_max_tokens(&model, max_tokens));
         let fallback_owned: Option<(String, String)> =
             fallback.map(|(provider, fallback_model)| {
                 (provider.to_string(), fallback_model.to_string())
