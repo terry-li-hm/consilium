@@ -303,7 +303,7 @@ pub async fn run_oxford(
         api_key,
         judge_model.as_str(),
         &verdict_messages,
-        1000,
+        4096,
         timeout,
         2,
         Some(&cost_tracker),
