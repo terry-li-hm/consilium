@@ -1280,7 +1280,6 @@ pub async fn run_parallel(
             let fallback_owned: Option<(String, String)> =
                 fallback.map(|(p, m)| (p.to_string(), m.to_string()));
             let cost_tracker = cost_tracker.cloned();
-            let effort = effort;
 
             tokio::spawn(async move {
                 let fallback_ref: Option<(&str, &str)> = fallback_owned
@@ -1384,7 +1383,6 @@ pub async fn run_parallel_with_different_messages(
             let fallback_owned: Option<(String, String)> =
                 fallback.map(|(p, m)| (p.to_string(), m.to_string()));
             let cost_tracker = cost_tracker.cloned();
-            let effort = effort;
 
             tokio::spawn(async move {
                 let fallback_ref: Option<(&str, &str)> = fallback_owned

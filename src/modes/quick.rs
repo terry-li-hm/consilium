@@ -72,7 +72,6 @@ async fn run_quick_streaming(
         let xai_api_key = xai_api_key.map(|s| s.to_string());
         let anthropic_api_key = anthropic_api_key.map(|s| s.to_string());
         let cost_tracker = cost_tracker.clone();
-        let effort = effort;
 
         pending.push(async move {
             let participant_start = Instant::now();
@@ -185,7 +184,6 @@ async fn run_quick_parallel(
         let xai_api_key = xai_api_key.map(|s| s.to_string());
         let anthropic_api_key = anthropic_api_key.map(|s| s.to_string());
         let cost_tracker = cost_tracker.clone();
-        let effort = effort;
 
         pending.push(async move {
             let start = Instant::now();
