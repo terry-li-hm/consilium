@@ -136,11 +136,11 @@ async fn run_quick_streaming(
         });
     }
 
-    while let Some((name, model_name, used_model_name, response, elapsed_ms)) = pending.next().await
+    while let Some((name, _model_name, used_model_name, response, elapsed_ms)) = pending.next().await
     {
-        let _ = output.begin_participant(&model_name);
-        let _ = output.write_str(&format!("### {model_name}\n{response}\n\n"));
-        let _ = output.end_participant(&model_name, &response, elapsed_ms);
+        let _ = output.begin_participant(&name);
+        let _ = output.write_str(&format!("### {name}\n{response}\n\n"));
+        let _ = output.end_participant(&name, &response, elapsed_ms);
         out.push((name, used_model_name, response, elapsed_ms));
     }
 
@@ -384,7 +384,7 @@ pub async fn run_quick(
         _ => {
             let parts: Vec<String> = results
                 .iter()
-                .map(|(_, model_name, response, _)| format!("### {model_name}\n{response}"))
+                .map(|(speaker_name, _, response, _)| format!("### {speaker_name}\n{response}"))
                 .collect();
             parts.join("\n\n")
         }

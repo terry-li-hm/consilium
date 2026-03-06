@@ -42,7 +42,7 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `config.rs` | 1071 | Constants, types, CostTracker, utility functions, 58 tests |
+| `config.rs` | 1083 | Constants, types, CostTracker, utility functions, 58 tests |
 | `api.rs` | 1579 | HTTP clients, SSE streaming, parallel queries, retry, fallback |
 | `prompts.rs` | 719 | All prompt templates (verbatim port from Python) |
 | `session.rs` | 859 | Output trait + CompactTeeOutput, LiveWriter, session save/share/history |
