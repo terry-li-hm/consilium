@@ -126,6 +126,18 @@ pub struct Cli {
     #[arg(long, default_value_t = false, help_heading = "Output")]
     pub stream: bool,
 
+    /// Override the xAI direct model slug (e.g. grok-4.20-experimental-beta-0304-reasoning)
+    #[arg(long, value_name = "SLUG", help_heading = "Models")]
+    pub xai_model: Option<String>,
+
+    /// Named Grok variant shortcut: beta, fast, multi, stable
+    ///   beta   → grok-4.20-experimental-beta-0304-reasoning (default)
+    ///   fast   → grok-4.20-experimental-beta-0304-non-reasoning
+    ///   multi  → grok-4.20-multi-agent-experimental-beta-0304
+    ///   stable → grok-4
+    #[arg(long, value_name = "VARIANT", help_heading = "Models")]
+    pub grok: Option<String>,
+
     /// API timeout in seconds
     #[arg(long, default_value = "300", help_heading = "Output")]
     pub timeout: f64,
@@ -187,6 +199,26 @@ impl Cli {
         } else {
             None
         }
+    }
+
+    /// Resolve the xAI model slug from --xai-model or --grok shortcut.
+    /// Returns None if neither is set (env var / compiled default applies).
+    pub fn resolve_xai_model(&self) -> Option<String> {
+        if let Some(slug) = &self.xai_model {
+            return Some(slug.clone());
+        }
+        self.grok.as_deref().map(|variant| {
+            match variant.to_lowercase().as_str() {
+                "fast" | "nr" | "non-reasoning" => {
+                    "grok-4.20-experimental-beta-0304-non-reasoning".to_string()
+                }
+                "multi" | "research" => {
+                    "grok-4.20-multi-agent-experimental-beta-0304".to_string()
+                }
+                "stable" | "4" => "grok-4".to_string(),
+                _ => "grok-4.20-experimental-beta-0304-reasoning".to_string(), // beta / reasoning / default
+            }
+        })
     }
 
     /// Check if any admin command is requested (no question needed).

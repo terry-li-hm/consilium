@@ -115,6 +115,11 @@ async fn main() {
     let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
     let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY").ok();
 
+    // Apply --xai-model / --grok shortcut before resolved_council() is called
+    if let Some(slug) = args.resolve_xai_model() {
+        std::env::set_var("CONSILIUM_XAI_MODEL", slug);
+    }
+
     let client = reqwest::Client::new();
     let mode = if let Some(explicit) = args.explicit_mode() {
         explicit.to_string()
