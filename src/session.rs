@@ -695,7 +695,7 @@ pub fn log_history(
     let mut entry = Map::new();
     entry.insert(
         "timestamp".into(),
-        Value::String(Local::now().format("%Y-%m-%dT%H:%M:%S%.f").to_string()),
+        Value::String(Local::now().to_rfc3339()),
     );
     entry.insert(
         "question".into(),

@@ -4,7 +4,7 @@ use crate::config::{
     CONSILIUM_MODEL_M5_ENV, CONSILIUM_MODEL_JUDGE_ENV,
 };
 use crate::session::get_sessions_dir;
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -166,26 +166,27 @@ pub fn show_stats() {
     let cutoff_7d = now - chrono::Duration::days(7);
     let cutoff_30d = now - chrono::Duration::days(30);
 
+    // Parse timestamp from history entry — handles both RFC3339 (with tz) and
+    // legacy naive format "%Y-%m-%dT%H:%M:%S%.f" (no tz, assumed local).
+    let parse_ts = |e: &&Value| -> Option<DateTime<Local>> {
+        let s = e.get("timestamp")?.as_str()?;
+        DateTime::parse_from_rfc3339(s)
+            .map(|dt| dt.with_timezone(&Local))
+            .or_else(|_| {
+                NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
+                    .map(|ndt| Local.from_local_datetime(&ndt).unwrap())
+            })
+            .ok()
+    };
+
     let recent_7d: Vec<_> = entries
         .iter()
-        .filter(|e| {
-            e.get("timestamp")
-                .and_then(|v| v.as_str())
-                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                .map(|dt| dt.with_timezone(&Local) >= cutoff_7d)
-                .unwrap_or(false)
-        })
+        .filter(|e| parse_ts(e).map(|dt| dt >= cutoff_7d).unwrap_or(false))
         .collect();
 
     let recent_30d: Vec<_> = entries
         .iter()
-        .filter(|e| {
-            e.get("timestamp")
-                .and_then(|v| v.as_str())
-                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                .map(|dt| dt.with_timezone(&Local) >= cutoff_30d)
-                .unwrap_or(false)
-        })
+        .filter(|e| parse_ts(e).map(|dt| dt >= cutoff_30d).unwrap_or(false))
         .collect();
 
     let cost_7d: f64 = recent_7d
