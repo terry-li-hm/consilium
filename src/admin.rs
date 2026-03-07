@@ -26,6 +26,27 @@ pub fn list_sessions() {
 
     entries.sort_by_key(|e| std::cmp::Reverse(e.metadata().and_then(|m| m.modified()).ok()));
 
+    // Build duration map from history.jsonl: "YYYY-MM-DDTHH:MM" → duration_secs
+    let history_file = sessions_dir
+        .parent()
+        .expect("sessions dir should have a parent")
+        .join("history.jsonl");
+    let mut duration_map: HashMap<String, f64> = HashMap::new();
+    if let Ok(content) = fs::read_to_string(&history_file) {
+        for line in content.lines() {
+            if let Ok(val) = serde_json::from_str::<Value>(line) {
+                if let (Some(ts), Some(dur)) = (
+                    val.get("timestamp").and_then(|v| v.as_str()),
+                    val.get("duration").and_then(|v| v.as_f64()),
+                ) {
+                    // Key: first 16 chars of RFC3339 timestamp → "2026-03-07T15:02"
+                    let key: String = ts.chars().take(16).collect();
+                    duration_map.insert(key, dur);
+                }
+            }
+        }
+    }
+
     if entries.is_empty() {
         println!("No sessions found.");
     } else {
@@ -39,11 +60,40 @@ pub fn list_sessions() {
                     dt.format("%Y-%m-%d %H:%M").to_string()
                 })
                 .unwrap_or_else(|| "unknown".to_string());
-            println!("  {}  {}", mtime, entry.file_name().to_string_lossy());
+
+            // Derive history key from filename "YYYYMMDD-HHMMSS-..." → "YYYY-MM-DDTHH:MM"
+            let fname = entry.file_name().to_string_lossy().to_string();
+            let dur_str = fname_to_ts_prefix(&fname)
+                .and_then(|key| duration_map.get(&key))
+                .map(|&d| format!("  {:>5}", fmt_duration(d)))
+                .unwrap_or_else(|| "       ".to_string());
+
+            println!("  {}{} {}", mtime, dur_str, entry.file_name().to_string_lossy());
         }
         if entries.len() > 20 {
             println!("\n  ... and {} more", entries.len() - 20);
         }
+    }
+}
+
+/// "20260307-150239-slug.md" → "2026-03-07T15:02"
+fn fname_to_ts_prefix(fname: &str) -> Option<String> {
+    let c: Vec<char> = fname.chars().collect();
+    if c.len() < 13 {
+        return None;
+    }
+    Some(format!(
+        "{}{}{}{}-{}{}-{}{}T{}{}:{}{}",
+        c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7],
+        c[9], c[10], c[11], c[12]
+    ))
+}
+
+fn fmt_duration(secs: f64) -> String {
+    if secs >= 60.0 {
+        format!("{:.0}m{:.0}s", secs / 60.0, secs % 60.0)
+    } else {
+        format!("{:.0}s", secs)
     }
 }
 

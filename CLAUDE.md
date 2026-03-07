@@ -53,7 +53,7 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 | `modes/redteam.rs` | 273 | Adversarial stress-test |
 | `modes/premortem.rs` | 218 | Pre-mortem: assume failure, work backward |
 | `modes/forecast.rs` | 219 | Superforecasting: probability estimates + reconciliation |
-| `admin.rs` | 441 | Stats, sessions, view, search |
+| `admin.rs` | 491 | Stats, sessions, view, search |
 | `tui.rs` | 433 | Ratatui TUI (Flexoki dark) |
 | `watch.rs` | 275 | Crossterm live watcher |
 | `cli.rs` | 235 | Clap derive struct (~30 flags) |
