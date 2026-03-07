@@ -326,6 +326,20 @@ pub async fn run_quick(
 
     let _ = output.write_str(&format!("({:.1}s, ~${:.2})\n", duration, total_cost));
 
+    let mut timing_parts: Vec<(String, u64)> = results
+        .iter()
+        .map(|(name, _, _, elapsed_ms)| (name.clone(), *elapsed_ms))
+        .collect();
+    timing_parts.sort_by_key(|(_, ms)| *ms);
+    let timing_str = timing_parts
+        .iter()
+        .map(|(name, ms)| format!("{}: {:.1}s", name, *ms as f64 / 1000.0))
+        .collect::<Vec<_>>()
+        .join(" · ");
+    if !timing_str.is_empty() {
+        let _ = output.write_str(&format!("Timings: {}\n", timing_str));
+    }
+
     let transcript = match format {
         "json" | "yaml" => {
             let responses: Vec<_> = results

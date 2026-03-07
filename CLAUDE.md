@@ -49,7 +49,7 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 | `modes/council.rs` | 1509 | Full council deliberation |
 | `modes/discuss.rs` | 527 | Roundtable + socratic |
 | `modes/oxford.rs` | 334 | Oxford debate |
-| `modes/quick.rs` | 411 | Parallel streaming |
+| `modes/quick.rs` | 425 | Parallel streaming |
 | `modes/redteam.rs` | 273 | Adversarial stress-test |
 | `modes/premortem.rs` | 218 | Pre-mortem: assume failure, work backward |
 | `modes/forecast.rs` | 219 | Superforecasting: probability estimates + reconciliation |
