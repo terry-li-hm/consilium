@@ -19,7 +19,7 @@ use reqwest::Client;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::LazyLock;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Extract self-reported confidence score from a response (e.g. "**Confidence: 7/10**").
 /// Searches the last 10 lines for the pattern. Returns None if not found.
@@ -489,6 +489,11 @@ async fn run_blind_phase_parallel(
 
     let messages = vec![Message::system(blind_system), Message::user(user_content)];
 
+    // Cap blind-phase wall-clock at 90s: initial claims are short (120-250 words).
+    // GPT-5.4-Pro via Responses API takes 67-81s with structured prompts even
+    // with medium effort — 90s allows completion while still guarding against
+    // infinite hangs from stalled connections.
+    let blind_timeout = timeout.min(90.0);
     let result = run_parallel(
         council_config,
         &messages,
@@ -500,7 +505,7 @@ async fn run_blind_phase_parallel(
         xai_api_key,
         anthropic_api_key,
         1500,
-        timeout,
+        blind_timeout,
         Some(cost_tracker),
         effort,
         None,
@@ -576,7 +581,7 @@ async fn run_xpol_phase_parallel(
         xai_api_key,
         anthropic_api_key,
         1500,
-        timeout,
+        timeout.min(90.0),
         Some(cost_tracker),
         effort,
         None,
@@ -1011,26 +1016,41 @@ pub async fn run_council(
             let _ = output.begin_participant(model_name);
             let _ = output.write_str(&format!("### {model_name}{challenger_indicator}\n"));
 
-            let (speaker_name, model_name, response) = query_model_async(
-                &client,
-                api_key,
-                model,
-                &messages,
-                name,
-                fallback,
-                google_api_key,
-                zhipu_api_key,
-                moonshot_api_key,
-                openai_api_key,
-                xai_api_key,
-                anthropic_api_key,
-                model_max_output_tokens(model).min(1500),
-                timeout,
-                2,
-                Some(&cost_tracker),
-                effort.map(|e| e.step_down()),
+            // Cap each speaker's debate-round wall-clock: prevents slow models
+            // (e.g. GPT-5.4-Pro Responses API) from blocking the full round.
+            let debate_wall = Duration::from_secs_f64(timeout.min(120.0));
+            let name_owned = name.to_string();
+            let model_name_owned = model.split('/').next_back().unwrap_or(model).to_string();
+            let (speaker_name, model_name, response) = tokio::time::timeout(
+                debate_wall,
+                query_model_async(
+                    &client,
+                    api_key,
+                    model,
+                    &messages,
+                    name,
+                    fallback,
+                    google_api_key,
+                    zhipu_api_key,
+                    moonshot_api_key,
+                    openai_api_key,
+                    xai_api_key,
+                    anthropic_api_key,
+                    model_max_output_tokens(model).min(1500),
+                    timeout,
+                    2,
+                    Some(&cost_tracker),
+                    effort.map(|e| e.step_down()),
+                ),
             )
-            .await;
+            .await
+            .unwrap_or_else(|_| {
+                (
+                    name_owned.clone(),
+                    model_name_owned,
+                    format!("[Error: {name_owned} timed out in debate after 120s]"),
+                )
+            });
 
             let _ = output.write_str(&format!("{response}\n\n"));
             let _ = output.end_participant(

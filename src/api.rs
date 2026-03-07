@@ -12,7 +12,7 @@ use reqwest::Client;
 use serde_json::Value;
 use std::sync::LazyLock;
 use std::time::Duration;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 
 /// Query the judge: try native direct API first (based on model), fall back to OpenRouter.
 /// Reads API keys from env directly to avoid threading through all mode signatures.
@@ -98,7 +98,10 @@ pub async fn query_model(
     let mut timeout_secs = timeout_secs;
 
     if is_thinking_model(model) {
-        max_tokens = max_tokens.max(16000);
+        // 4096 floor: enough for thinking + short answer (blind/debate phases need ~120-250 words).
+        // Callers needing longer outputs should pass a higher max_tokens explicitly.
+        // Previously 16000 caused OpenRouter to generate ~295s responses for simple prompts.
+        max_tokens = max_tokens.max(4096);
         timeout_secs = timeout_secs.max(300.0);
     }
 
@@ -341,7 +344,7 @@ pub async fn query_bigmodel(
     let mut timeout_secs = timeout_secs;
 
     if is_thinking_model(model) {
-        max_tokens = max_tokens.max(16000);
+        max_tokens = max_tokens.max(4096);
         timeout_secs = timeout_secs.max(300.0);
     }
 
@@ -406,9 +409,10 @@ pub async fn query_bigmodel(
             .unwrap_or("");
 
         if content.trim().is_empty() {
+            // GLM-5 returns "reasoning_content" (not "reasoning") for thinking models.
             let reasoning = choices[0]
                 .get("message")
-                .and_then(|m| m.get("reasoning"))
+                .and_then(|m| m.get("reasoning_content").or_else(|| m.get("reasoning")))
                 .and_then(|r| r.as_str())
                 .unwrap_or("");
             if !reasoning.trim().is_empty() {
@@ -449,7 +453,7 @@ pub async fn query_moonshot(
     let mut timeout_secs = timeout_secs;
 
     if is_thinking_model(model) {
-        max_tokens = max_tokens.max(16000);
+        max_tokens = max_tokens.max(4096);
         timeout_secs = timeout_secs.max(300.0);
     }
 
@@ -558,7 +562,7 @@ pub async fn query_xai(
     let mut timeout_secs = timeout_secs;
 
     if is_thinking_model(model) {
-        max_tokens = max_tokens.max(16000);
+        max_tokens = max_tokens.max(4096);
         timeout_secs = timeout_secs.max(300.0);
     }
 
@@ -654,11 +658,18 @@ pub async fn query_openai(
     effort: Option<ReasoningEffort>,
 ) -> String {
     let mut max_tokens = max_tokens;
-    let mut timeout_secs = timeout_secs;
+    let timeout_secs = timeout_secs;
 
     if is_thinking_model(model) {
-        max_tokens = max_tokens.max(16000);
-        timeout_secs = timeout_secs.max(300.0);
+        // GPT-5.4-Pro (Responses API) requires ≥4096 max_output_tokens to
+        // complete reasoning for structured prompts — with fewer tokens, the
+        // request stalls rather than returning an error. Responses still use
+        // ~335 tokens even when 4096 is set; the ceiling just needs to be large
+        // enough for the reasoning budget allocation.
+        // Tested: 1500/2500 → stall >90s, 3000 → 81s, 4096 → 67-75s.
+        max_tokens = max_tokens.max(4096);
+        // Use caller-supplied timeout — the caller (query_model_with_fallback
+        // and council debate rounds) already sets an appropriate ceiling.
     }
 
     for attempt in 0..=retries {
@@ -672,8 +683,13 @@ pub async fn query_openai(
             "input": messages,
             "max_output_tokens": max_tokens,
         });
-        if let Some(effort) = effort {
-            body["reasoning"] = serde_json::json!({ "effort": effort.as_str() });
+        // Default thinking models to "medium" reasoning effort when not explicitly set.
+        // Without this, GPT-5.4-Pro uses its maximum effort (~60s) for trivial prompts.
+        // "low" is unsupported for gpt-5.4-pro; "medium" is the fastest valid option.
+        let reasoning_effort = effort.map(|e| e.as_str().to_string())
+            .unwrap_or_else(|| if is_thinking_model(model) { "medium".to_string() } else { String::new() });
+        if !reasoning_effort.is_empty() {
+            body["reasoning"] = serde_json::json!({ "effort": reasoning_effort });
         }
 
         let result = client
@@ -1028,7 +1044,10 @@ pub async fn query_model_with_fallback(
 ) -> (String, String, String) {
     let model_name = model.split('/').next_back().unwrap_or(model).to_string();
     let mut primary_response: Option<String> = None;
-    let timeout_secs = timeout_secs.max(if is_thinking_model(model) { 120.0 } else { 60.0 });
+    // Cap per-attempt timeout: thinking models get 120s max, others 60s.
+    // The outer wall-clock in run_parallel (90s blind phase) and debate-round
+    // timeout cap (120s) in council.rs provide the actual UX ceiling.
+    let timeout_secs = timeout_secs.min(if is_thinking_model(model) { 120.0 } else { 60.0 });
 
     // For Claude: try Anthropic directly first
     if let Some(("anthropic", anthropic_model)) = fallback {
@@ -1285,26 +1304,44 @@ pub async fn run_parallel(
                 let fallback_ref: Option<(&str, &str)> = fallback_owned
                     .as_ref()
                     .map(|(p, m)| (p.as_str(), m.as_str()));
-                let result = query_model_with_fallback(
-                    &client,
-                    &api_key,
-                    &model,
-                    &messages,
-                    &name,
-                    fallback_ref,
-                    google_api_key.as_deref(),
-                    zhipu_api_key.as_deref(),
-                    moonshot_api_key.as_deref(),
-                    openai_api_key.as_deref(),
-                    xai_api_key.as_deref(),
-                    anthropic_api_key.as_deref(),
-                    model_max_output_tokens(&model).min(max_tokens),
-                    timeout_secs,
-                    2,
-                    cost_tracker.as_ref(),
-                    effort,
+                // Hard wall-clock timeout: prevents any single slow model from
+                // blocking the entire parallel phase indefinitely. Per-call
+                // timeouts inside query_model_with_fallback apply per HTTP
+                // request, but retries + fallback can multiply that. This cap
+                // is the absolute ceiling for the whole chain.
+                let wall_timeout = Duration::from_secs_f64(timeout_secs);
+                let result = timeout(
+                    wall_timeout,
+                    query_model_with_fallback(
+                        &client,
+                        &api_key,
+                        &model,
+                        &messages,
+                        &name,
+                        fallback_ref,
+                        google_api_key.as_deref(),
+                        zhipu_api_key.as_deref(),
+                        moonshot_api_key.as_deref(),
+                        openai_api_key.as_deref(),
+                        xai_api_key.as_deref(),
+                        anthropic_api_key.as_deref(),
+                        model_max_output_tokens(&model).min(max_tokens),
+                        timeout_secs,
+                        2,
+                        cost_tracker.as_ref(),
+                        effort,
+                    ),
                 )
-                .await;
+                .await
+                .unwrap_or_else(|_| {
+                    (
+                        name.clone(),
+                        name.clone(),
+                        format!(
+                            "[Error: {name} timed out after {timeout_secs:.0}s]"
+                        ),
+                    )
+                });
 
                 (idx, result)
             })
@@ -1388,26 +1425,44 @@ pub async fn run_parallel_with_different_messages(
                 let fallback_ref: Option<(&str, &str)> = fallback_owned
                     .as_ref()
                     .map(|(p, m)| (p.as_str(), m.as_str()));
-                let result = query_model_with_fallback(
-                    &client,
-                    &api_key,
-                    &model,
-                    &messages,
-                    &name,
-                    fallback_ref,
-                    google_api_key.as_deref(),
-                    zhipu_api_key.as_deref(),
-                    moonshot_api_key.as_deref(),
-                    openai_api_key.as_deref(),
-                    xai_api_key.as_deref(),
-                    anthropic_api_key.as_deref(),
-                    model_max_output_tokens(&model).min(max_tokens),
-                    timeout_secs,
-                    2,
-                    cost_tracker.as_ref(),
-                    effort,
+                // Hard wall-clock timeout: prevents any single slow model from
+                // blocking the entire parallel phase indefinitely. Per-call
+                // timeouts inside query_model_with_fallback apply per HTTP
+                // request, but retries + fallback can multiply that. This cap
+                // is the absolute ceiling for the whole chain.
+                let wall_timeout = Duration::from_secs_f64(timeout_secs);
+                let result = timeout(
+                    wall_timeout,
+                    query_model_with_fallback(
+                        &client,
+                        &api_key,
+                        &model,
+                        &messages,
+                        &name,
+                        fallback_ref,
+                        google_api_key.as_deref(),
+                        zhipu_api_key.as_deref(),
+                        moonshot_api_key.as_deref(),
+                        openai_api_key.as_deref(),
+                        xai_api_key.as_deref(),
+                        anthropic_api_key.as_deref(),
+                        model_max_output_tokens(&model).min(max_tokens),
+                        timeout_secs,
+                        2,
+                        cost_tracker.as_ref(),
+                        effort,
+                    ),
                 )
-                .await;
+                .await
+                .unwrap_or_else(|_| {
+                    (
+                        name.clone(),
+                        name.clone(),
+                        format!(
+                            "[Error: {name} timed out after {timeout_secs:.0}s]"
+                        ),
+                    )
+                });
 
                 (idx, result)
             })
