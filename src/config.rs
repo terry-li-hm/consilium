@@ -15,8 +15,8 @@ pub struct SessionResult {
 }
 
 /// Model entry: (display_name, openrouter_model, fallback).
-/// Fallback is (provider, model) — supports "xai", "zhipu", "moonshot".
-/// GPT (OpenAI direct 404s on gpt-5.4-pro) and Gemini (OR faster from HK) use OpenRouter only.
+/// Fallback is (provider, model) — supports "xai" and "zhipu".
+/// GPT and Gemini (OR faster from HK) use OpenRouter only.
 pub type ModelEntry = (
     &'static str,
     &'static str,
@@ -26,10 +26,8 @@ pub type ModelEntry = (
 pub const OPENROUTER_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 pub const GOOGLE_AI_STUDIO_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 pub const BIGMODEL_URL: &str = "https://api.z.ai/api/paas/v4/chat/completions";
-pub const MOONSHOT_URL: &str = "https://api.moonshot.ai/v1/chat/completions";
 pub const XAI_URL: &str = "https://api.x.ai/v1/chat/completions";
 pub const OPENAI_URL: &str = "https://api.openai.com/v1/chat/completions";
-pub const OPENAI_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 pub const ANTHROPIC_URL: &str = "https://api.anthropic.com/v1/messages";
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 
@@ -85,16 +83,16 @@ impl ReasoningEffort {
 
 // Council: 5 panelists (Gemini is judge; Claude is M2 panelist + critique)
 // Fallback routing based on HK latency benchmark (2026-03-04):
-//   GPT: None — gpt-5.4-pro returns 404 on OpenAI chat/completions (not a chat model)
+//   GPT: None — gpt-5.2-pro is a standard chat/thinking model on OpenRouter
 //   Gemini: None — OR (5.0s) is faster than Google AI Studio direct (8.3s) from HK
 //   Grok: xAI direct (5.8s) vs OR (13.0s) — direct much faster
-//   Kimi: moonshot.ai direct (2.7s) vs OR (2.6s) — tied, keep native
+//   DeepSeek: None — use OpenRouter only
 //   GLM: z.ai direct (2.6s) vs OR (9.8s) — direct much faster
 pub const COUNCIL: &[ModelEntry] = &[
-    ("GPT", "openai/gpt-5.4-pro", Some(("openai", "gpt-5.4-pro"))), // via Responses API
+    ("GPT", "openai/gpt-5.2-pro", None),
     ("Gemini", "google/gemini-3.1-pro-preview", None),
     ("Grok-4.20\u{03B2}", "x-ai/grok-4", Some(("xai", "grok-4.20-experimental-beta-0304-reasoning"))),
-    ("Kimi", "moonshotai/kimi-k2.5", Some(("moonshot", "kimi-k2.5"))),
+    ("DeepSeek", "deepseek/deepseek-v3.2", None),
     ("GLM", "z-ai/glm-5", Some(("zhipu", "glm-5"))),
 ];
 
@@ -112,7 +110,7 @@ pub const CONSILIUM_MODEL_M5_ENV: &str = "CONSILIUM_MODEL_M5";
 pub const CONSILIUM_MODEL_GPT_ENV: &str = CONSILIUM_MODEL_M1_ENV;
 pub const CONSILIUM_MODEL_GEMINI_ENV: &str = CONSILIUM_MODEL_M2_ENV;
 pub const CONSILIUM_MODEL_GROK_ENV: &str = CONSILIUM_MODEL_M3_ENV;
-pub const CONSILIUM_MODEL_KIMI_ENV: &str = CONSILIUM_MODEL_M4_ENV;
+pub const CONSILIUM_MODEL_DEEPSEEK_ENV: &str = CONSILIUM_MODEL_M4_ENV;
 pub const CONSILIUM_MODEL_GLM_ENV: &str = CONSILIUM_MODEL_M5_ENV;
 pub const CONSILIUM_MODEL_JUDGE_ENV: &str = "CONSILIUM_MODEL_JUDGE";
 pub const CONSILIUM_MODEL_CRITIQUE_ENV: &str = "CONSILIUM_MODEL_CRITIQUE";
@@ -180,9 +178,9 @@ fn xai_model_label(model: &str) -> String {
 /// Resolve council models at runtime, applying env var overrides.
 pub fn resolved_council() -> Vec<ModelEntry> {
     let model_1 = env_override(CONSILIUM_MODEL_M1_ENV)
-        .map(|v| leak_if_needed(v, "openai/gpt-5.4-pro"))
-        .unwrap_or("openai/gpt-5.4-pro");
-    let model_1_name = leak_if_needed(display_name_from_model(model_1), "GPT-5.4-Pro");
+        .map(|v| leak_if_needed(v, "openai/gpt-5.2-pro"))
+        .unwrap_or("openai/gpt-5.2-pro");
+    let model_1_name = leak_if_needed(display_name_from_model(model_1), "GPT-5.2-Pro");
 
     let model_2 = env_override(CONSILIUM_MODEL_M2_ENV)
         .map(|v| leak_if_needed(v, "anthropic/claude-opus-4-6"))
@@ -198,9 +196,9 @@ pub fn resolved_council() -> Vec<ModelEntry> {
     let model_3_name = leak_if_needed(xai_model_label(xai_model), "Grok-4.20\u{03B2}");
 
     let model_4 = env_override(CONSILIUM_MODEL_M4_ENV)
-        .map(|v| leak_if_needed(v, "moonshotai/kimi-k2.5"))
-        .unwrap_or("moonshotai/kimi-k2.5");
-    let model_4_name = leak_if_needed(display_name_from_model(model_4), "Kimi-K2.5");
+        .map(|v| leak_if_needed(v, "deepseek/deepseek-v3.2"))
+        .unwrap_or("deepseek/deepseek-v3.2");
+    let model_4_name = leak_if_needed(display_name_from_model(model_4), "DeepSeek-V3.2");
 
     let model_5_fallback = env_override(CONSILIUM_MODEL_M5_ENV)
         .map(|v| leak_if_needed(v, "glm-5"))
@@ -208,10 +206,10 @@ pub fn resolved_council() -> Vec<ModelEntry> {
     let model_5_name = leak_if_needed(display_name_from_model("z-ai/glm-5"), "GLM-5");
 
     vec![
-        (model_1_name, model_1, Some(("openai", "gpt-5.4-pro"))), // Responses API direct ~1.6s vs OR 4.0s
+        (model_1_name, model_1, None),
         (model_2_name, model_2, Some(("anthropic", "claude-opus-4-6"))),
         (model_3_name, model_3, Some(("xai", xai_model))),
-        (model_4_name, model_4, Some(("moonshot", "kimi-k2.5"))),
+        (model_4_name, model_4, None),
         (model_5_name, "z-ai/glm-5", Some(("zhipu", model_5_fallback))),
     ]
 }
@@ -264,8 +262,6 @@ pub fn oxford_models() -> Vec<ModelEntry> {
 const THINKING_MODEL_SUFFIXES: &[&str] = &[
     "claude-opus-4-6",
     "claude-opus-4.5",
-    "gpt-5.4-pro",
-    "gpt-5.4",
     "gpt-5.2-pro",
     "gpt-5.2",
     "gemini-3.1-pro-preview",
@@ -324,9 +320,7 @@ pub fn model_max_output_tokens(model: &str) -> u32 {
         8192
     } else if m.contains("claude") || m.contains("anthropic") {
         32000
-    } else if m.contains("gpt-5.4") {
-        131072
-    } else if m.contains("gpt") || m.contains("openai") {
+    } else if m.contains("gpt") || m.contains("openai") || m.contains("deepseek") {
         16384
     } else if m.contains("grok") || m.contains("xai") {
         32768
@@ -557,8 +551,8 @@ mod tests {
         assert_eq!(model_max_output_tokens("google/gemini-1.5-pro"), 8192);
         assert_eq!(model_max_output_tokens("anthropic/claude-3-opus"), 32000);
         assert_eq!(model_max_output_tokens("openai/gpt-4o"), 16384);
-        assert_eq!(model_max_output_tokens("openai/gpt-5.4-pro"), 131072);
         assert_eq!(model_max_output_tokens("openai/gpt-5.2-pro"), 16384);
+        assert_eq!(model_max_output_tokens("deepseek/deepseek-v3.2"), 16384);
         assert_eq!(model_max_output_tokens("x-ai/grok-2"), 32768);
         assert_eq!(model_max_output_tokens("moonshotai/kimi-v1"), 16384);
         assert_eq!(model_max_output_tokens("z-ai/glm-4"), 16000);
@@ -567,10 +561,6 @@ mod tests {
 
     #[test]
     fn test_display_name_from_model_examples() {
-        assert_eq!(
-            display_name_from_model("openai/gpt-5.4-pro"),
-            "GPT-5.4-Pro"
-        );
         assert_eq!(
             display_name_from_model("openai/gpt-5.2-pro"),
             "GPT-5.2-Pro"
@@ -602,11 +592,6 @@ mod tests {
     #[test]
     fn test_claude_opus_is_thinking() {
         assert!(is_thinking_model("anthropic/claude-opus-4-6"));
-    }
-
-    #[test]
-    fn test_gpt_54_is_thinking() {
-        assert!(is_thinking_model("openai/gpt-5.4-pro"));
     }
 
     #[test]

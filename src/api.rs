@@ -3,7 +3,7 @@
 use crate::config::{
     fallback_also_failed_message, is_error_response, is_thinking_model, model_max_output_tokens,
     CostTracker, Message, ModelEntry, ReasoningEffort, ANTHROPIC_URL, ANTHROPIC_VERSION,
-    BIGMODEL_URL, GOOGLE_AI_STUDIO_URL, MOONSHOT_URL, OPENAI_RESPONSES_URL, OPENROUTER_URL, XAI_URL,
+    BIGMODEL_URL, GOOGLE_AI_STUDIO_URL, OPENROUTER_URL, XAI_URL,
 };
 use crate::session::Output;
 use futures_util::StreamExt;
@@ -439,114 +439,6 @@ pub async fn query_bigmodel(
     format!("[Error: Failed to get response from bigmodel {model}]")
 }
 
-/// Query Moonshot directly (primary for Kimi models).
-pub async fn query_moonshot(
-    client: &Client,
-    api_key: &str,
-    model: &str,
-    messages: &[Message],
-    max_tokens: u32,
-    timeout_secs: f64,
-    retries: u32,
-) -> String {
-    let mut max_tokens = max_tokens;
-    let mut timeout_secs = timeout_secs;
-
-    if is_thinking_model(model) {
-        max_tokens = max_tokens.max(4096);
-        timeout_secs = timeout_secs.max(300.0);
-    }
-
-    for attempt in 0..=retries {
-        if attempt > 0 {
-            let backoff = (2u64.pow(attempt)) as f64 + rand::random::<f64>();
-            sleep(Duration::from_secs_f64(backoff)).await;
-        }
-
-        let result = client
-            .post(MOONSHOT_URL)
-            .header("Authorization", format!("Bearer {api_key}"))
-            .timeout(Duration::from_secs_f64(timeout_secs))
-            .json(&serde_json::json!({
-                "model": model,
-                "messages": messages,
-                "max_tokens": max_tokens,
-            }))
-            .send()
-            .await;
-
-        let response = match result {
-            Ok(r) => r,
-            Err(_) if attempt < retries => continue,
-            Err(e) => return format!("[Error: Connection failed for moonshot {model}: {e}]"),
-        };
-
-        if response.status() != 200 {
-            if attempt < retries {
-                continue;
-            }
-            return format!("[Error: HTTP {} from moonshot {model}]", response.status());
-        }
-
-        let data: Value = match response.json().await {
-            Ok(d) => d,
-            Err(_) if attempt < retries => continue,
-            Err(_) => return format!("[Error: Invalid JSON response from moonshot {model}]"),
-        };
-
-        if let Some(err) = data.get("error") {
-            if attempt < retries {
-                continue;
-            }
-            let msg = err
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("Unknown error");
-            return format!("[Error: {msg}]");
-        }
-
-        let choices = match data.get("choices").and_then(|c| c.as_array()) {
-            Some(c) if !c.is_empty() => c,
-            _ if attempt < retries => continue,
-            _ => return format!("[Error: No response from moonshot {model}]"),
-        };
-
-        let content = choices[0]
-            .get("message")
-            .and_then(|m| m.get("content"))
-            .and_then(|c| c.as_str())
-            .unwrap_or("");
-
-        if content.trim().is_empty() {
-            let reasoning = choices[0]
-                .get("message")
-                .and_then(|m| m.get("reasoning"))
-                .and_then(|r| r.as_str())
-                .unwrap_or("");
-            if !reasoning.trim().is_empty() {
-                if attempt < retries {
-                    continue;
-                }
-                let preview = &reasoning[..reasoning.len().min(150)];
-                return format!(
-                    "[Model still thinking - needs more tokens. Partial reasoning: {preview}...]"
-                );
-            }
-            if attempt < retries {
-                continue;
-            }
-            return format!(
-                "[No response from moonshot {model} after {} attempts]",
-                retries + 1
-            );
-        }
-
-        return strip_think_blocks(content);
-    }
-
-    format!("[Error: Failed to get response from moonshot {model}]")
-}
-
 /// Query xAI directly (primary for Grok models).
 pub async fn query_xai(
     client: &Client,
@@ -642,126 +534,6 @@ pub async fn query_xai(
     }
 
     format!("[Error: Failed to get response from xai {model}]")
-}
-
-/// Query OpenAI directly via Responses API (supports gpt-5.2-pro and all GPT-5.x models).
-/// Responses API differs from chat/completions: uses `input`/`max_output_tokens` in request,
-/// and returns an `output` array (skip reasoning entries, find type=="message").
-pub async fn query_openai(
-    client: &Client,
-    api_key: &str,
-    model: &str,
-    messages: &[Message],
-    max_tokens: u32,
-    timeout_secs: f64,
-    retries: u32,
-    effort: Option<ReasoningEffort>,
-) -> String {
-    let mut max_tokens = max_tokens;
-    let timeout_secs = timeout_secs;
-
-    if is_thinking_model(model) {
-        // GPT-5.4-Pro (Responses API) requires ≥4096 max_output_tokens to
-        // complete reasoning for structured prompts — with fewer tokens, the
-        // request stalls rather than returning an error. Responses still use
-        // ~335 tokens even when 4096 is set; the ceiling just needs to be large
-        // enough for the reasoning budget allocation.
-        // Tested: 1500/2500 → stall >90s, 3000 → 81s, 4096 → 67-75s.
-        max_tokens = max_tokens.max(4096);
-        // Use caller-supplied timeout — the caller (query_model_with_fallback
-        // and council debate rounds) already sets an appropriate ceiling.
-    }
-
-    for attempt in 0..=retries {
-        if attempt > 0 {
-            let backoff = (2u64.pow(attempt)) as f64 + rand::random::<f64>();
-            sleep(Duration::from_secs_f64(backoff)).await;
-        }
-
-        let mut body = serde_json::json!({
-            "model": model,
-            "input": messages,
-            "max_output_tokens": max_tokens,
-        });
-        // Default thinking models to "medium" reasoning effort when not explicitly set.
-        // Without this, GPT-5.4-Pro uses its maximum effort (~60s) for trivial prompts.
-        // "low" is unsupported for gpt-5.4-pro; "medium" is the fastest valid option.
-        let reasoning_effort = effort.map(|e| e.as_str().to_string())
-            .unwrap_or_else(|| if is_thinking_model(model) { "medium".to_string() } else { String::new() });
-        if !reasoning_effort.is_empty() {
-            body["reasoning"] = serde_json::json!({ "effort": reasoning_effort });
-        }
-
-        let result = client
-            .post(OPENAI_RESPONSES_URL)
-            .header("Authorization", format!("Bearer {api_key}"))
-            .timeout(Duration::from_secs_f64(timeout_secs))
-            .json(&body)
-            .send()
-            .await;
-
-        let response = match result {
-            Ok(r) => r,
-            Err(_) if attempt < retries => continue,
-            Err(e) => return format!("[Error: Connection failed for openai {model}: {e}]"),
-        };
-
-        if response.status() != 200 {
-            if attempt < retries {
-                continue;
-            }
-            return format!("[Error: HTTP {} from openai {model}]", response.status());
-        }
-
-        let data: Value = match response.json().await {
-            Ok(d) => d,
-            Err(_) if attempt < retries => continue,
-            Err(_) => return format!("[Error: Invalid JSON response from openai {model}]"),
-        };
-
-        if let Some(err) = data.get("error") {
-            if attempt < retries {
-                continue;
-            }
-            let msg = err
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("Unknown error");
-            return format!("[Error: {msg}]");
-        }
-
-        // Responses API returns an `output` array; reasoning models also emit a
-        // `type: "reasoning"` entry before the message — skip it and find the message.
-        let content = data
-            .get("output")
-            .and_then(|o| o.as_array())
-            .and_then(|arr| {
-                arr.iter().find(|e| {
-                    e.get("type").and_then(|t| t.as_str()) == Some("message")
-                })
-            })
-            .and_then(|e| e.get("content"))
-            .and_then(|c| c.as_array())
-            .and_then(|arr| {
-                arr.iter().find(|e| {
-                    e.get("type").and_then(|t| t.as_str()) == Some("output_text")
-                })
-            })
-            .and_then(|e| e.get("text"))
-            .and_then(|t| t.as_str())
-            .unwrap_or("");
-
-        if content.trim().is_empty() {
-            if attempt < retries {
-                continue;
-            }
-            return format!("[No response from openai {model} after {} attempts]", retries + 1);
-        }
-
-        return strip_think_blocks(content);
-    }
-
-    format!("[Error: Failed to get response from openai {model}]")
 }
 
 /// Query Anthropic directly (primary for Judge).
@@ -1032,8 +804,8 @@ pub async fn query_model_with_fallback(
     fallback: Option<(&str, &str)>,
     google_api_key: Option<&str>,
     zhipu_api_key: Option<&str>,
-    moonshot_api_key: Option<&str>,
-    openai_api_key: Option<&str>,
+    _moonshot_api_key: Option<&str>,
+    _openai_api_key: Option<&str>,
     xai_api_key: Option<&str>,
     anthropic_api_key: Option<&str>,
     max_tokens: u32,
@@ -1089,49 +861,6 @@ pub async fn query_model_with_fallback(
             }
             primary_response = Some(response);
             // bigmodel.cn failed — fall through to OpenRouter
-        }
-    }
-
-    // For GPT: try OpenAI directly first
-    if let Some(("openai", openai_model)) = fallback {
-        if let Some(oapi_key) = openai_api_key {
-            let response = query_openai(
-                client,
-                oapi_key,
-                openai_model,
-                messages,
-                max_tokens,
-                timeout_secs,
-                retries,
-                effort,
-            )
-            .await;
-            if !is_error_response(&response) {
-                return (name.to_string(), openai_model.to_string(), response);
-            }
-            primary_response = Some(response);
-            // OpenAI failed — fall through to OpenRouter
-        }
-    }
-
-    // For Kimi: try Moonshot.cn directly first
-    if let Some(("moonshot", moonshot_model)) = fallback {
-        if let Some(mapi_key) = moonshot_api_key {
-            let response = query_moonshot(
-                client,
-                mapi_key,
-                moonshot_model,
-                messages,
-                max_tokens,
-                timeout_secs,
-                retries,
-            )
-            .await;
-            if !is_error_response(&response) {
-                return (name.to_string(), moonshot_model.to_string(), response);
-            }
-            primary_response = Some(response);
-            // Moonshot failed — fall through to OpenRouter
         }
     }
 

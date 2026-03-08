@@ -459,10 +459,10 @@ pub fn doctor() {
     println!("  {:<20} {}", "MOONSHOT_API_KEY", key_marker("MOONSHOT_API_KEY"));
     println!();
     println!("Routing (benchmarked from HK, 2026-03-04):");
-    println!("  {}  → OpenAI Responses API direct 1.6s (OR 4.0s)", council[0].0);
+    println!("  {}  → OpenRouter only", council[0].0);
     println!("  {}  → Anthropic direct", council[1].0);
     println!("  {}    → xAI direct 5.8s  (OR 13.0s)", council[2].0);
-    println!("  {} → Moonshot direct 2.7s (OR 2.6s, tied)", council[3].0);
+    println!("  {} → OpenRouter only", council[3].0);
     println!("  {}     → z.ai direct 2.6s  (OR 9.8s)", council[4].0);
     println!("  Judge         → Google AI Studio direct (fallback OR)");
 }

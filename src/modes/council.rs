@@ -490,7 +490,7 @@ async fn run_blind_phase_parallel(
     let messages = vec![Message::system(blind_system), Message::user(user_content)];
 
     // Cap blind-phase wall-clock at 90s: initial claims are short (120-250 words).
-    // GPT-5.4-Pro via Responses API takes 67-81s with structured prompts even
+    // GPT-5.2-Pro on OpenRouter takes 67-81s with structured prompts even
     // with medium effort — 90s allows completion while still guarding against
     // infinite hangs from stalled connections.
     let blind_timeout = timeout.min(90.0);
@@ -1017,7 +1017,7 @@ pub async fn run_council(
             let _ = output.write_str(&format!("### {model_name}{challenger_indicator}\n"));
 
             // Cap each speaker's debate-round wall-clock: prevents slow models
-            // (e.g. GPT-5.4-Pro Responses API) from blocking the full round.
+            // (e.g. GPT-5.2-Pro on OpenRouter) from blocking the full round.
             let debate_wall = Duration::from_secs_f64(timeout.min(120.0));
             let name_owned = name.to_string();
             let model_name_owned = model.split('/').next_back().unwrap_or(model).to_string();

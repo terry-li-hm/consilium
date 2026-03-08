@@ -42,8 +42,8 @@ The release binary is symlinked from `~/.local/bin/consilium`. After code change
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `config.rs` | 1097 | Constants, types, CostTracker, utility functions, 58 tests |
-| `api.rs` | 1634 | HTTP clients, SSE streaming, parallel queries, retry, fallback |
+| `config.rs` | 1082 | Constants, types, CostTracker, utility functions, 58 tests |
+| `api.rs` | 1363 | HTTP clients, SSE streaming, parallel queries, retry, fallback |
 | `prompts.rs` | 719 | All prompt templates (verbatim port from Python) |
 | `session.rs` | 859 | Output trait + CompactTeeOutput, LiveWriter, session save/share/history |
 | `modes/council.rs` | 1529 | Full council deliberation |
@@ -99,4 +99,4 @@ This codebase was built via delegation to Codex and Gemini CLI. When delegating 
 
 - **`COUNCIL` const is dead code.** `resolved_council()` in `config.rs` is the runtime source of truth for council composition and fallback providers. Editing `COUNCIL` has zero runtime effect.
 - **`query_judge()` reads `ANTHROPIC_API_KEY` from env directly** (not threaded through function signatures). This avoids cascading changes across 30+ callers. The pattern: leaf function reads `std::env::var("KEY")`, tries native API, falls back to OpenRouter if key absent or on error.
-- **Native API fallback pattern (all providers):** each provider tries its own direct API first (Moonshot.cn, xAI, OpenAI, Google AI Studio, Zhipu, Anthropic), falls back to OpenRouter. Keys loaded from macOS Keychain in `.zshenv`.
+- **Native API fallback pattern:** each provider tries its own direct API first (xAI, Google AI Studio, Zhipu, Anthropic), falls back to OpenRouter. GPT and DeepSeek use OpenRouter only. Keys loaded from macOS Keychain in `.zshenv`.
