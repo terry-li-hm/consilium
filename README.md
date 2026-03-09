@@ -34,7 +34,7 @@ Multi-model collaboration produces better outcomes than any single model — but
 | Role | Model | Lab |
 |------|-------|-----|
 | Panelist | GPT-5.2 Pro | OpenAI |
-| Panelist | Claude Opus 4.6 | Anthropic |
+| Panelist | Claude Sonnet 4.6 | Anthropic |
 | Panelist | Grok-4.20 | xAI |
 | Panelist | DeepSeek V3.2 | DeepSeek |
 | Panelist | GLM-5 | Zhipu |
