@@ -183,9 +183,9 @@ pub fn resolved_council() -> Vec<ModelEntry> {
     let model_1_name = leak_if_needed(display_name_from_model(model_1), "GPT-5.2-Pro");
 
     let model_2 = env_override(CONSILIUM_MODEL_M2_ENV)
-        .map(|v| leak_if_needed(v, "anthropic/claude-opus-4-6"))
-        .unwrap_or("anthropic/claude-opus-4-6");
-    let model_2_name = leak_if_needed(display_name_from_model(model_2), "Claude-Opus-4-6");
+        .map(|v| leak_if_needed(v, "anthropic/claude-sonnet-4-6"))
+        .unwrap_or("anthropic/claude-sonnet-4-6");
+    let model_2_name = leak_if_needed(display_name_from_model(model_2), "Claude-Sonnet-4-6");
 
     let model_3 = env_override(CONSILIUM_MODEL_M3_ENV)
         .map(|v| leak_if_needed(v, "x-ai/grok-4"))
@@ -207,7 +207,7 @@ pub fn resolved_council() -> Vec<ModelEntry> {
 
     vec![
         (model_1_name, model_1, None),
-        (model_2_name, model_2, Some(("anthropic", "claude-opus-4-6"))),
+        (model_2_name, model_2, Some(("anthropic", "claude-sonnet-4-6"))),
         (model_3_name, model_3, Some(("xai", xai_model))),
         (model_4_name, model_4, None),
         (model_5_name, "z-ai/glm-5", Some(("zhipu", model_5_fallback))),
