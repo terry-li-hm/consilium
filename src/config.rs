@@ -98,7 +98,7 @@ pub const COUNCIL: &[ModelEntry] = &[
 
 pub const JUDGE_MODEL: &str = "google/gemini-3.1-pro-preview";
 pub const COMPRESSION_MODEL: &str = "meta-llama/llama-3.3-70b-instruct";
-pub const CRITIQUE_MODEL: &str = "anthropic/claude-opus-4-6";
+pub const CRITIQUE_MODEL: &str = "anthropic/claude-sonnet-4-6";
 pub const CLASSIFIER_MODEL: &str = "anthropic/claude-opus-4-6"; // stable classifier
 pub const EXTRACTION_MODEL: &str = "anthropic/claude-haiku-4-5";
 
