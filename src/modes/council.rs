@@ -3,8 +3,9 @@
 use crate::api::{query_judge, query_model, query_model_async, run_parallel};
 use crate::config::{
     detect_consensus, detect_social_context, is_error_response, model_max_output_tokens,
-    parse_confidence, resolved_judge_model, sanitize_speaker_content, CostTracker, Message,
-    ModelEntry, resolved_critique_model, ReasoningEffort, SessionResult, EXTRACTION_MODEL,
+    parse_confidence, resolved_critique_model_with_override, resolved_judge_model_with_override,
+    sanitize_speaker_content, CostTracker, Message, ModelEntry, ReasoningEffort, SessionResult,
+    EXTRACTION_MODEL,
 };
 use crate::prompts::{
     council_blind_system, council_challenger_addition, council_debate_system,
@@ -340,11 +341,12 @@ pub async fn extract_structured_summary(
 pub async fn decompose_question(
     question: &str,
     api_key: &str,
+    judge_model_override: Option<&str>,
     output: &mut dyn Output,
     cost_tracker: &CostTracker,
 ) -> Vec<String> {
     let client = Client::new();
-    let judge_model = resolved_judge_model();
+    let judge_model = resolved_judge_model_with_override(judge_model_override);
 
     let judge_name = judge_model
         .split('/')
@@ -716,11 +718,14 @@ pub async fn run_council(
     followup: bool,
     thorough: bool,
     effort: Option<ReasoningEffort>,
+    judge_model_override: Option<&str>,
+    critic_model_override: Option<&str>,
+    no_critic: bool,
 ) -> SessionResult {
     let start = Instant::now();
     let client = Client::new();
     let cost_tracker = CostTracker::new();
-    let judge_model = resolved_judge_model();
+    let judge_model = resolved_judge_model_with_override(judge_model_override);
 
     let domain_hint = domain.and_then(domain_context);
     let social_mode = detect_social_context(question);
@@ -1170,7 +1175,9 @@ pub async fn run_council(
                     .get(*name)
                     .cloned()
                     .unwrap_or_else(|| name.to_string());
-                final_confidence.get(*name).map(|s| format!("- {label}: {s}/10"))
+                final_confidence
+                    .get(*name)
+                    .map(|s| format!("- {label}: {s}/10"))
             })
             .collect();
         if lines.is_empty() {
@@ -1320,78 +1327,82 @@ pub async fn run_council(
                 )),
             ];
 
-            let critique_model = resolved_critique_model();
-            let critique_name = critique_model
-                .split('/')
-                .next_back()
-                .unwrap_or(&critique_model);
-            let critique_t0 = Instant::now();
-            let _ = output.begin_phase("JUDGMENT");
-            let _ = output.begin_participant(&format!("Critique ({critique_name})"));
-            let _ = output.write_str(&format!("### Critique ({critique_name})\n"));
-
-            let critique_response = query_model(
-                &client,
-                api_key,
-                &critique_model,
-                &critique_messages,
-                model_max_output_tokens(&critique_model),
-                300.0,
-                2,
-                Some(&cost_tracker),
-                effort,
-            )
-            .await;
-
-            let _ = output.write_str(&format!("{critique_response}\n\n"));
-            let _ = output.end_participant(
-                &format!("Critique ({critique_name})"),
-                &critique_response,
-                critique_t0.elapsed().as_millis() as u64,
-            );
-
-            output_parts.push(format!(
-                "### Critique ({critique_name})\n{critique_response}"
-            ));
-
-            if is_error_response(&critique_response) {
-                let _ = output.write_str("(Critique unavailable — synthesis is unreviewed)\n\n");
-                output_parts.push("*(Critique unavailable — synthesis is unreviewed)*".to_string());
-            } else {
-                let final_t0 = Instant::now();
+            if !no_critic {
+                let critique_model = resolved_critique_model_with_override(critic_model_override);
+                let critique_name = critique_model
+                    .split('/')
+                    .next_back()
+                    .unwrap_or(&critique_model);
+                let critique_t0 = Instant::now();
                 let _ = output.begin_phase("JUDGMENT");
-                let _ = output.begin_participant(&format!("Final Synthesis ({judge_name})"));
-                let _ = output.write_str(&format!("### Final Synthesis ({judge_name})\n"));
+                let _ = output.begin_participant(&format!("Critique ({critique_name})"));
+                let _ = output.write_str(&format!("### Critique ({critique_name})\n"));
 
-                let mut revision_messages = judge_messages.clone();
-                revision_messages.push(Message::assistant(judge_response.clone()));
-                revision_messages.push(Message::user(format!(
-                    "An independent critic has reviewed your synthesis:\n\n{critique_response}\n\nRevise your synthesis considering this critique. Keep what's right, fix what's wrong. If the critique raises valid points, integrate them. If not, explain briefly why you stand by your original position. Output your FINAL revised synthesis in the same format."
-                )));
-
-                let final_response = query_judge(
+                let critique_response = query_model(
                     &client,
                     api_key,
-                    judge_model.as_str(),
-                    &revision_messages,
-                    model_max_output_tokens(judge_model.as_str()),
+                    &critique_model,
+                    &critique_messages,
+                    model_max_output_tokens(&critique_model),
                     300.0,
                     2,
                     Some(&cost_tracker),
+                    effort,
                 )
                 .await;
 
-                let _ = output.write_str(&format!("{final_response}\n\n"));
+                let _ = output.write_str(&format!("{critique_response}\n\n"));
                 let _ = output.end_participant(
-                    &format!("Final Synthesis ({judge_name})"),
-                    &final_response,
-                    final_t0.elapsed().as_millis() as u64,
+                    &format!("Critique ({critique_name})"),
+                    &critique_response,
+                    critique_t0.elapsed().as_millis() as u64,
                 );
 
                 output_parts.push(format!(
-                    "### Final Synthesis ({judge_name})\n{final_response}"
+                    "### Critique ({critique_name})\n{critique_response}"
                 ));
-                judge_response = final_response;
+
+                if is_error_response(&critique_response) {
+                    let _ =
+                        output.write_str("(Critique unavailable — synthesis is unreviewed)\n\n");
+                    output_parts
+                        .push("*(Critique unavailable — synthesis is unreviewed)*".to_string());
+                } else {
+                    let final_t0 = Instant::now();
+                    let _ = output.begin_phase("JUDGMENT");
+                    let _ = output.begin_participant(&format!("Final Synthesis ({judge_name})"));
+                    let _ = output.write_str(&format!("### Final Synthesis ({judge_name})\n"));
+
+                    let mut revision_messages = judge_messages.clone();
+                    revision_messages.push(Message::assistant(judge_response.clone()));
+                    revision_messages.push(Message::user(format!(
+                        "An independent critic has reviewed your synthesis:\n\n{critique_response}\n\nRevise your synthesis considering this critique. Keep what's right, fix what's wrong. If the critique raises valid points, integrate them. If not, explain briefly why you stand by your original position. Output your FINAL revised synthesis in the same format."
+                    )));
+
+                    let final_response = query_judge(
+                        &client,
+                        api_key,
+                        judge_model.as_str(),
+                        &revision_messages,
+                        model_max_output_tokens(judge_model.as_str()),
+                        300.0,
+                        2,
+                        Some(&cost_tracker),
+                    )
+                    .await;
+
+                    let _ = output.write_str(&format!("{final_response}\n\n"));
+                    let _ = output.end_participant(
+                        &format!("Final Synthesis ({judge_name})"),
+                        &final_response,
+                        final_t0.elapsed().as_millis() as u64,
+                    );
+
+                    output_parts.push(format!(
+                        "### Final Synthesis ({judge_name})\n{final_response}"
+                    ));
+                    judge_response = final_response;
+                }
             }
         }
 

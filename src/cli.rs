@@ -138,6 +138,18 @@ pub struct Cli {
     #[arg(long, value_name = "VARIANT", help_heading = "Models")]
     pub grok: Option<String>,
 
+    /// Override the judge model: sonnet, opus, gemini, or full model ID
+    #[arg(short = 'J', long, value_name = "MODEL", help_heading = "Models")]
+    pub judge_model: Option<String>,
+
+    /// Override the critic model: sonnet, opus, gemini, or full model ID
+    #[arg(short = 'C', long, value_name = "MODEL", help_heading = "Models")]
+    pub critic_model: Option<String>,
+
+    /// Skip the critique step in council mode
+    #[arg(long, help_heading = "Models")]
+    pub no_critic: bool,
+
     /// API timeout in seconds
     #[arg(long, default_value = "300", help_heading = "Output")]
     pub timeout: f64,
@@ -212,9 +224,7 @@ impl Cli {
                 "fast" | "nr" | "non-reasoning" => {
                     "grok-4.20-experimental-beta-0304-non-reasoning".to_string()
                 }
-                "multi" | "research" => {
-                    "grok-4.20-multi-agent-experimental-beta-0304".to_string()
-                }
+                "multi" | "research" => "grok-4.20-multi-agent-experimental-beta-0304".to_string(),
                 "stable" | "4" => "grok-4".to_string(),
                 _ => "grok-4.20-experimental-beta-0304-reasoning".to_string(), // beta / reasoning / default
             }
@@ -231,5 +241,27 @@ impl Cli {
             || self.search.is_some()
             || self.version_flag
             || self.doctor
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_model_override_flags_parse() {
+        let cli = Cli::parse_from([
+            "consilium",
+            "Test question",
+            "--judge-model",
+            "sonnet",
+            "--critic-model",
+            "gemini",
+            "--no-critic",
+        ]);
+
+        assert_eq!(cli.judge_model.as_deref(), Some("sonnet"));
+        assert_eq!(cli.critic_model.as_deref(), Some("gemini"));
+        assert!(cli.no_critic);
     }
 }

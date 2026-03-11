@@ -91,7 +91,11 @@ impl ReasoningEffort {
 pub const COUNCIL: &[ModelEntry] = &[
     ("GPT", "openai/gpt-5.2-pro", None),
     ("Gemini", "google/gemini-3.1-pro-preview", None),
-    ("Grok-4.20\u{03B2}", "x-ai/grok-4", Some(("xai", "grok-4.20-experimental-beta-0304-reasoning"))),
+    (
+        "Grok-4.20\u{03B2}",
+        "x-ai/grok-4",
+        Some(("xai", "grok-4.20-experimental-beta-0304-reasoning")),
+    ),
     ("DeepSeek", "deepseek/deepseek-v3.2", None),
     ("GLM", "z-ai/glm-5", Some(("zhipu", "glm-5"))),
 ];
@@ -128,6 +132,16 @@ fn env_override(var: &str) -> Option<String> {
             Some(trimmed.to_string())
         }
     })
+}
+
+fn normalize_model_override(value: &str) -> String {
+    let trimmed = value.trim();
+    match trimmed.to_ascii_lowercase().as_str() {
+        "sonnet" => "anthropic/claude-sonnet-4-6".to_string(),
+        "opus" => "anthropic/claude-opus-4-6".to_string(),
+        "gemini" => "google/gemini-3.1-pro-preview".to_string(),
+        _ => trimmed.to_string(),
+    }
 }
 
 fn leak_if_needed(value: String, default: &'static str) -> &'static str {
@@ -169,7 +183,11 @@ fn display_name_from_model(model_id: &str) -> String {
 /// Short display label for xAI model slugs (condenses verbose beta names).
 fn xai_model_label(model: &str) -> String {
     if model.contains("4.20") {
-        let suffix = if model.contains("non-reasoning") { "-NR" } else { "" };
+        let suffix = if model.contains("non-reasoning") {
+            "-NR"
+        } else {
+            ""
+        };
         return format!("Grok-4.20\u{03B2}{suffix}");
     }
     display_name_from_model(model)
@@ -207,21 +225,49 @@ pub fn resolved_council() -> Vec<ModelEntry> {
 
     vec![
         (model_1_name, model_1, None),
-        (model_2_name, model_2, Some(("anthropic", "claude-sonnet-4-6"))),
+        (
+            model_2_name,
+            model_2,
+            Some(("anthropic", "claude-sonnet-4-6")),
+        ),
         (model_3_name, model_3, Some(("xai", xai_model))),
         (model_4_name, model_4, None),
-        (model_5_name, "z-ai/glm-5", Some(("zhipu", model_5_fallback))),
+        (
+            model_5_name,
+            "z-ai/glm-5",
+            Some(("zhipu", model_5_fallback)),
+        ),
     ]
 }
 
 /// Resolve judge model at runtime, applying env var override.
 pub fn resolved_judge_model() -> String {
-    env_override(CONSILIUM_MODEL_JUDGE_ENV).unwrap_or_else(|| JUDGE_MODEL.to_string())
+    resolved_judge_model_with_override(None)
+}
+
+/// Resolve judge model at runtime, applying CLI and env var overrides.
+pub fn resolved_judge_model_with_override(cli_override: Option<&str>) -> String {
+    cli_override
+        .map(normalize_model_override)
+        .or_else(|| {
+            env_override(CONSILIUM_MODEL_JUDGE_ENV).map(|value| normalize_model_override(&value))
+        })
+        .unwrap_or_else(|| JUDGE_MODEL.to_string())
 }
 
 /// Resolve critique model at runtime, applying env var override.
 pub fn resolved_critique_model() -> String {
-    env_override(CONSILIUM_MODEL_CRITIQUE_ENV).unwrap_or_else(|| CRITIQUE_MODEL.to_string())
+    resolved_critique_model_with_override(None)
+}
+
+/// Resolve critique model at runtime, applying CLI and env var overrides.
+pub fn resolved_critique_model_with_override(cli_override: Option<&str>) -> String {
+    cli_override
+        .map(normalize_model_override)
+        .or_else(|| {
+            env_override(CONSILIUM_MODEL_CRITIQUE_ENV).map(|value| normalize_model_override(&value))
+        })
+        .unwrap_or_else(|| CRITIQUE_MODEL.to_string())
 }
 
 /// Quick mode: council + Judge (no judge conflict in quick mode).
@@ -272,7 +318,9 @@ const THINKING_MODEL_SUFFIXES: &[&str] = &[
 
 pub fn is_thinking_model(model: &str) -> bool {
     let model_name = model.split('/').next_back().unwrap_or(model).to_lowercase();
-    THINKING_MODEL_SUFFIXES.iter().any(|suffix| model_name == *suffix)
+    THINKING_MODEL_SUFFIXES
+        .iter()
+        .any(|suffix| model_name == *suffix)
         || model_name.starts_with("grok-4.2") // covers all grok-4.20+ beta variants
 }
 
@@ -561,10 +609,7 @@ mod tests {
 
     #[test]
     fn test_display_name_from_model_examples() {
-        assert_eq!(
-            display_name_from_model("openai/gpt-5.2-pro"),
-            "GPT-5.2-Pro"
-        );
+        assert_eq!(display_name_from_model("openai/gpt-5.2-pro"), "GPT-5.2-Pro");
         assert_eq!(
             display_name_from_model("deepseek/deepseek-v3.2"),
             "DeepSeek-V3.2"
@@ -618,6 +663,30 @@ mod tests {
     #[test]
     fn test_claude_sonnet_not_thinking() {
         assert!(!is_thinking_model("anthropic/claude-sonnet-4"));
+    }
+
+    #[test]
+    fn test_resolved_judge_model_with_alias_override() {
+        assert_eq!(
+            resolved_judge_model_with_override(Some("sonnet")),
+            "anthropic/claude-sonnet-4-6"
+        );
+        assert_eq!(
+            resolved_judge_model_with_override(Some("opus")),
+            "anthropic/claude-opus-4-6"
+        );
+        assert_eq!(
+            resolved_judge_model_with_override(Some("gemini")),
+            "google/gemini-3.1-pro-preview"
+        );
+    }
+
+    #[test]
+    fn test_resolved_critique_model_with_full_id_override() {
+        assert_eq!(
+            resolved_critique_model_with_override(Some("anthropic/claude-sonnet-4-6")),
+            "anthropic/claude-sonnet-4-6"
+        );
     }
 
     // --- is_error_response ---

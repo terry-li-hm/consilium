@@ -30,6 +30,9 @@ fn test_help_includes_examples() -> Result<(), Box<dyn std::error::Error>> {
         .stdout(predicate::str::contains("Examples:"))
         .stdout(predicate::str::contains(
             "consilium \"Should I take this job offer?\"",
-        ));
+        ))
+        .stdout(predicate::str::contains("--judge-model"))
+        .stdout(predicate::str::contains("--critic-model"))
+        .stdout(predicate::str::contains("--no-critic"));
     Ok(())
 }

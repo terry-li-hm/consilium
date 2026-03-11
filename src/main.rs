@@ -83,7 +83,11 @@ async fn main() {
         (Some(q), _) => q.clone(),
         (None, Some(path)) => std::fs::read_to_string(path)
             .unwrap_or_else(|e| {
-                eprintln!("Error: could not read prompt file {}: {}", path.display(), e);
+                eprintln!(
+                    "Error: could not read prompt file {}: {}",
+                    path.display(),
+                    e
+                );
                 std::process::exit(1);
             })
             .trim()
@@ -276,8 +280,14 @@ async fn main() {
             let sub_questions = if should_decompose {
                 let decompose_cost = CostTracker::new();
                 Some(
-                    council::decompose_question(&question, &api_key, &mut *output, &decompose_cost)
-                        .await,
+                    council::decompose_question(
+                        &question,
+                        &api_key,
+                        args.judge_model.as_deref(),
+                        &mut *output,
+                        &decompose_cost,
+                    )
+                    .await,
                 )
             } else {
                 None
@@ -319,6 +329,9 @@ async fn main() {
                 args.followup,
                 args.thorough,
                 effort,
+                args.judge_model.as_deref(),
+                args.critic_model.as_deref(),
+                args.no_critic,
             )
             .await
         }
