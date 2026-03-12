@@ -35,6 +35,20 @@ pub trait Output: Send + Sync {
     }
 }
 
+/// No-op output for piped contexts (e.g. CC background tasks).
+/// Prevents pipe buffer overflow on long deliberations.
+/// Session still auto-saves to disk; caller reads the session file.
+pub struct SilentOutput;
+
+impl Output for SilentOutput {
+    fn write_str(&mut self, _s: &str) -> io::Result<()> {
+        Ok(())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 fn render_colored_line(
     out: &mut impl Write,
     line: &str,

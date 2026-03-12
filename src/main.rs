@@ -24,6 +24,16 @@ fn stdout_is_file_redirect() -> bool {
     }
 }
 
+/// Returns true when stdout is a pipe (e.g. CC background task).
+/// Pipe output can overflow or truncate — suppress stdout, rely on session auto-save.
+fn stdout_is_pipe() -> bool {
+    let fd = std::io::stdout().as_raw_fd();
+    unsafe {
+        let mut stat: libc::stat = std::mem::zeroed();
+        libc::fstat(fd, &mut stat) == 0 && (stat.st_mode & libc::S_IFMT) == libc::S_IFIFO
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args = Cli::parse();
@@ -141,10 +151,15 @@ async fn main() {
     let effort = args.effort.as_deref().and_then(ReasoningEffort::from_str);
 
     let color = std::env::var("NO_COLOR").is_err() && std::io::stdout().is_terminal();
+    let piped = stdout_is_pipe();
     let mut output: Box<dyn consilium::session::Output> = if stdout_is_file_redirect() {
         // Stdout redirected to a file (background capture) — always stream full output
         // regardless of --quiet so TaskOutput shows progress and the task doesn't look stuck.
         Box::new(AgentOutput::new(None, false))
+    } else if piped {
+        // Stdout is a pipe (e.g. CC background task) — pipe buffers overflow on long
+        // deliberations. Suppress stdout; session auto-saves to disk. Print path at end.
+        Box::new(consilium::session::SilentOutput)
     } else if args.stream || args.quiet {
         setup_live_output(effective_quiet, color)
     } else {
@@ -341,7 +356,7 @@ async fn main() {
         }
     };
 
-    finish_session(
+    let session_path = finish_session(
         &question,
         &result,
         &mode,
@@ -353,6 +368,14 @@ async fn main() {
         effective_quiet,
         result.extra.clone(),
     );
+
+    // When piped (e.g. CC background task), stdout was suppressed to avoid pipe
+    // buffer overflow. Print just the session path so the caller can `cat` it.
+    if piped {
+        if let Some(path) = &session_path {
+            println!("{}", path.display());
+        }
+    }
 
     if args.push {
         // Build a minimal run payload compatible with the consilium.sh CLI API
