@@ -12,6 +12,7 @@ use reqwest::Client;
 use serde_json::Value;
 use std::sync::LazyLock;
 use std::time::Duration;
+use tokio::process::Command;
 use tokio::time::{sleep, timeout};
 
 /// Query the judge: try native direct API first (based on model), fall back to OpenRouter.
@@ -48,6 +49,11 @@ pub async fn query_judge(
             }
         }
     } else if model.contains("anthropic/") || model.contains("claude") {
+        let response = query_claude_print(model, messages, timeout_secs).await;
+        if !is_error_response(&response) {
+            return response;
+        }
+
         if let Ok(ant_key) = std::env::var("ANTHROPIC_API_KEY") {
             if !ant_key.trim().is_empty() {
                 let response = query_anthropic(
@@ -103,6 +109,13 @@ pub async fn query_model(
         // Previously 16000 caused OpenRouter to generate ~295s responses for simple prompts.
         max_tokens = max_tokens.max(4096);
         timeout_secs = timeout_secs.max(300.0);
+    }
+
+    if model.contains("anthropic/") || model.contains("claude") {
+        let response = query_claude_print(model, messages, timeout_secs).await;
+        if !is_error_response(&response) {
+            return response;
+        }
     }
 
     for attempt in 0..=retries {
@@ -208,6 +221,104 @@ pub async fn query_model(
     }
 
     format!("[Error: Failed to get response from {model}]")
+}
+
+fn claude_print_model_id(model: &str) -> &str {
+    model.strip_prefix("anthropic/").unwrap_or(model)
+}
+
+fn claude_print_prompt(messages: &[Message]) -> String {
+    let mut sections = Vec::new();
+
+    for msg in messages {
+        let content = msg.content.trim();
+        if content.is_empty() {
+            continue;
+        }
+
+        match msg.role.as_str() {
+            "system" | "user" => sections.push(content.to_string()),
+            "assistant" => sections.push(format!("Previous response:\n{content}")),
+            _ => sections.push(content.to_string()),
+        }
+    }
+
+    sections.join("\n\n")
+}
+
+/// Query Claude Code CLI in print mode (uses Max subscription via OAuth).
+pub async fn query_claude_print(model: &str, messages: &[Message], timeout_secs: f64) -> String {
+    let prompt = claude_print_prompt(messages);
+    if prompt.trim().is_empty() {
+        return format!("[Error: Empty prompt for claude --print {model}]");
+    }
+
+    let model = claude_print_model_id(model);
+    let mut command = Command::new("claude");
+    command
+        .arg("--model")
+        .arg(model)
+        .arg("--print")
+        .arg("--output-format")
+        .arg("json")
+        .arg("-p")
+        .arg(&prompt)
+        .env_remove("CLAUDECODE")
+        .env_remove("ANTHROPIC_API_KEY")
+        .kill_on_drop(true);
+
+    let output = match timeout(Duration::from_secs_f64(timeout_secs), command.output()).await {
+        Ok(Ok(output)) => output,
+        Ok(Err(e)) => return format!("[Error: Failed to run claude --print for {model}: {e}]"),
+        Err(_) => return format!("[Error: claude --print timed out for {model}]"),
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            return format!(
+                "[Error: claude --print exited with status {} for {model}]",
+                output.status
+            );
+        }
+        return format!("[Error: claude --print failed for {model}: {stderr}]");
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let data: Value = match serde_json::from_str(&stdout) {
+        Ok(data) => data,
+        Err(e) => {
+            return format!("[Error: Invalid JSON from claude --print for {model}: {e}]");
+        }
+    };
+
+    if data
+        .get("is_error")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        let msg = data
+            .get("result")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown claude --print error");
+        return format!("[Error: {msg}]");
+    }
+
+    let result = data
+        .get("result")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+
+    if result.is_empty() {
+        return format!("[Error: Empty result from claude --print for {model}]");
+    }
+
+    if result.contains("Credit balance is too low") {
+        return format!("[Error: {result}]");
+    }
+
+    strip_think_blocks(result)
 }
 
 /// Query Google AI Studio directly (fallback for Gemini models).
@@ -527,7 +638,10 @@ pub async fn query_xai(
             if attempt < retries {
                 continue;
             }
-            return format!("[No response from xai {model} after {} attempts]", retries + 1);
+            return format!(
+                "[No response from xai {model} after {} attempts]",
+                retries + 1
+            );
         }
 
         return strip_think_blocks(content);
@@ -619,7 +733,10 @@ pub async fn query_anthropic(
         let content = data
             .get("content")
             .and_then(|c| c.as_array())
-            .and_then(|arr| arr.iter().find(|b| b.get("type").and_then(|t| t.as_str()) == Some("text")))
+            .and_then(|arr| {
+                arr.iter()
+                    .find(|b| b.get("type").and_then(|t| t.as_str()) == Some("text"))
+            })
             .and_then(|b| b.get("text"))
             .and_then(|t| t.as_str())
             .unwrap_or("");
@@ -628,7 +745,10 @@ pub async fn query_anthropic(
             if attempt < retries {
                 continue;
             }
-            return format!("[No response from anthropic {model} after {} attempts]", retries + 1);
+            return format!(
+                "[No response from anthropic {model} after {} attempts]",
+                retries + 1
+            );
         }
 
         return strip_think_blocks(content);
@@ -819,7 +939,11 @@ pub async fn query_model_with_fallback(
     // Cap per-attempt timeout: thinking models get 120s max, others 60s.
     // The outer wall-clock in run_parallel (90s blind phase) and debate-round
     // timeout cap (120s) in council.rs provide the actual UX ceiling.
-    let timeout_secs = timeout_secs.min(if is_thinking_model(model) { 120.0 } else { 60.0 });
+    let timeout_secs = timeout_secs.min(if is_thinking_model(model) {
+        120.0
+    } else {
+        60.0
+    });
 
     // For Claude: try Anthropic directly first
     if let Some(("anthropic", anthropic_model)) = fallback {
@@ -1066,9 +1190,7 @@ pub async fn run_parallel(
                     (
                         name.clone(),
                         name.clone(),
-                        format!(
-                            "[Error: {name} timed out after {timeout_secs:.0}s]"
-                        ),
+                        format!("[Error: {name} timed out after {timeout_secs:.0}s]"),
                     )
                 });
 
@@ -1187,9 +1309,7 @@ pub async fn run_parallel_with_different_messages(
                     (
                         name.clone(),
                         name.clone(),
-                        format!(
-                            "[Error: {name} timed out after {timeout_secs:.0}s]"
-                        ),
+                        format!("[Error: {name} timed out after {timeout_secs:.0}s]"),
                     )
                 });
 
@@ -1310,6 +1430,29 @@ mod tests {
     fn test_strip_think_blocks_multiple() {
         let input = "<think>first</think>middle<think>second</think>end";
         assert_eq!(strip_think_blocks(input), "middleend");
+    }
+
+    #[test]
+    fn test_claude_print_model_id_strips_anthropic_prefix() {
+        assert_eq!(
+            claude_print_model_id("anthropic/claude-opus-4-6"),
+            "claude-opus-4-6"
+        );
+        assert_eq!(claude_print_model_id("claude-opus-4-6"), "claude-opus-4-6");
+    }
+
+    #[test]
+    fn test_claude_print_prompt_formats_roles() {
+        let messages = vec![
+            Message::system("System instruction"),
+            Message::user("User question"),
+            Message::assistant("Prior answer"),
+        ];
+
+        assert_eq!(
+            claude_print_prompt(&messages),
+            "System instruction\n\nUser question\n\nPrevious response:\nPrior answer"
+        );
     }
 
     // SSE line parsing tests
