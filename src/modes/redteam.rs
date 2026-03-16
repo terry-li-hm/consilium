@@ -3,7 +3,7 @@
 use crate::api::{query_model, run_parallel_with_different_messages};
 use crate::config::{
     model_max_output_tokens, sanitize_speaker_content, CostTracker, Message, ModelEntry,
-    ReasoningEffort, SessionResult, DISCUSS_HOST,
+    QueryOptions, SessionResult, DISCUSS_HOST,
 };
 use crate::prompts::{
     redteam_attacker_deepen, redteam_attacker_system, redteam_host_analysis, redteam_host_deepen,
@@ -27,7 +27,7 @@ pub async fn run_redteam(
     _format: &str,
     timeout: f64,
     output: &mut dyn Output,
-    effort: Option<ReasoningEffort>,
+    opts: &QueryOptions,
 ) -> SessionResult {
     let start = Instant::now();
     let cost_tracker = CostTracker::new();
@@ -58,7 +58,7 @@ pub async fn run_redteam(
         timeout,
         2,
         Some(&cost_tracker),
-        effort,
+        opts,
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", host_analysis));
@@ -99,7 +99,7 @@ pub async fn run_redteam(
         600,
         timeout,
         Some(&cost_tracker),
-        effort,
+        opts,
         None,
     )
     .await;
@@ -145,7 +145,7 @@ pub async fn run_redteam(
         timeout,
         2,
         Some(&cost_tracker),
-        effort,
+        opts,
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", host_deepen));
@@ -206,7 +206,7 @@ pub async fn run_redteam(
             timeout,
             2,
             Some(&cost_tracker),
-            effort,
+            opts,
         )
         .await;
 
@@ -247,7 +247,7 @@ pub async fn run_redteam(
         timeout,
         2,
         Some(&cost_tracker),
-        effort,
+        opts,
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", host_triage));
