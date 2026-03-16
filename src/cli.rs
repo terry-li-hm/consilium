@@ -1,5 +1,6 @@
 //! Command-line argument parsing via clap derive.
 
+use crate::config::SearchEngine;
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -89,6 +90,14 @@ pub struct Cli {
     /// Reasoning effort for thinking models: low, medium, high
     #[arg(long, help_heading = "Deliberation")]
     pub effort: Option<String>,
+
+    /// Enable web search grounding via OpenRouter [default: 5 results, engine: exa]
+    #[arg(long, help_heading = "Context", value_name = "N", default_missing_value = "5", num_args = 0..=1, value_parser = clap::value_parser!(u8).range(1..=255))]
+    pub web_search: Option<u8>,
+
+    /// Search engine for --web-search: exa (~$0.02/req), native (provider pricing, may cost significantly more), firecrawl, parallel
+    #[arg(long, help_heading = "Context", value_name = "ENGINE", requires = "web_search")]
+    pub web_engine: Option<SearchEngine>,
 
     /// Skip early consensus exit and context compression (full deliberation)
     #[arg(long, help_heading = "Deliberation")]

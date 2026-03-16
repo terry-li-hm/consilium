@@ -2,8 +2,8 @@
 
 use crate::config::{
     fallback_also_failed_message, is_error_response, is_thinking_model, model_max_output_tokens,
-    CostTracker, Message, ModelEntry, ReasoningEffort, ANTHROPIC_URL, ANTHROPIC_VERSION,
-    BIGMODEL_URL, GOOGLE_AI_STUDIO_URL, OPENROUTER_URL, XAI_URL,
+    CostTracker, Message, ModelEntry, QueryOptions, ReasoningEffort, WebSearchConfig,
+    ANTHROPIC_URL, ANTHROPIC_VERSION, BIGMODEL_URL, GOOGLE_AI_STUDIO_URL, OPENROUTER_URL, XAI_URL,
 };
 use crate::session::Output;
 use futures_util::StreamExt;
@@ -15,8 +15,18 @@ use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::{sleep, timeout};
 
+/// Build the OpenRouter plugins JSON for web search.
+fn web_search_plugin_json(config: &WebSearchConfig) -> serde_json::Value {
+    serde_json::json!([{
+        "id": "web",
+        "max_results": config.max_results,
+        "engine": config.engine.as_str()
+    }])
+}
+
 /// Query the judge: try native direct API first (based on model), fall back to OpenRouter.
 /// Reads API keys from env directly to avoid threading through all mode signatures.
+/// Judge never uses web search — always uses high effort.
 pub async fn query_judge(
     client: &Client,
     openrouter_api_key: &str,
@@ -28,6 +38,7 @@ pub async fn query_judge(
     cost_tracker: Option<&CostTracker>,
 ) -> String {
     let effort = Some(ReasoningEffort::High);
+    let judge_opts = QueryOptions::new(effort, None);
     if model.contains("google/") || model.contains("gemini") {
         if let Ok(g_key) = std::env::var("GOOGLE_API_KEY") {
             if !g_key.trim().is_empty() {
@@ -83,7 +94,7 @@ pub async fn query_judge(
         timeout_secs,
         retries,
         cost_tracker,
-        effort,
+        &judge_opts,
     )
     .await
 }
@@ -98,7 +109,7 @@ pub async fn query_model(
     timeout_secs: f64,
     retries: u32,
     cost_tracker: Option<&CostTracker>,
-    effort: Option<ReasoningEffort>,
+    opts: &QueryOptions,
 ) -> String {
     let mut max_tokens = max_tokens;
     let mut timeout_secs = timeout_secs;
@@ -111,7 +122,8 @@ pub async fn query_model(
         timeout_secs = timeout_secs.max(300.0);
     }
 
-    if model.contains("anthropic/") || model.contains("claude") {
+    // Skip native API fallbacks when web search is enabled — native APIs don't support plugins
+    if opts.web_search.is_none() && (model.contains("anthropic/") || model.contains("claude")) {
         let response = query_claude_print(model, messages, timeout_secs).await;
         if !is_error_response(&response) {
             return response;
@@ -129,8 +141,11 @@ pub async fn query_model(
             "messages": messages,
             "max_tokens": max_tokens,
         });
-        if let Some(effort) = effort {
+        if let Some(effort) = opts.effort {
             body["reasoning"] = serde_json::json!({ "effort": effort.as_str() });
+        }
+        if let Some(ref config) = opts.web_search {
+            body["plugins"] = web_search_plugin_json(config);
         }
 
         let result = client
@@ -766,7 +781,7 @@ pub async fn query_model_streaming(
     max_tokens: u32,
     timeout_secs: f64,
     cost_tracker: Option<&CostTracker>,
-    effort: Option<ReasoningEffort>,
+    opts: &QueryOptions,
     output: &mut dyn Output,
 ) -> String {
     let mut full_content = Vec::new();
@@ -778,10 +793,13 @@ pub async fn query_model_streaming(
         "max_tokens": max_tokens,
         "stream": true,
     });
-    if let Some(effort) = effort {
+    if let Some(effort) = opts.effort {
         body["reasoning"] = serde_json::json!({
             "effort": effort.as_str(),
         });
+    }
+    if let Some(ref config) = opts.web_search {
+        body["plugins"] = web_search_plugin_json(config);
     }
 
     let result = client
@@ -932,7 +950,7 @@ pub async fn query_model_with_fallback(
     timeout_secs: f64,
     retries: u32,
     cost_tracker: Option<&CostTracker>,
-    effort: Option<ReasoningEffort>,
+    opts: &QueryOptions,
 ) -> (String, String, String) {
     let model_name = model.split('/').next_back().unwrap_or(model).to_string();
     let mut primary_response: Option<String> = None;
@@ -945,92 +963,95 @@ pub async fn query_model_with_fallback(
         60.0
     });
 
-    // For Claude: try Anthropic directly first
-    if let Some(("anthropic", anthropic_model)) = fallback {
-        if let Some(ant_key) = anthropic_api_key {
-            let response = query_anthropic(
-                client,
-                ant_key,
-                anthropic_model,
-                messages,
-                max_tokens,
-                timeout_secs,
-                retries,
-                effort,
-            )
-            .await;
-            if !is_error_response(&response) {
-                return (name.to_string(), anthropic_model.to_string(), response);
+    // Skip native API fallbacks when web search is enabled — native APIs don't support plugins
+    if opts.web_search.is_none() {
+        // For Claude: try Anthropic directly first
+        if let Some(("anthropic", anthropic_model)) = fallback {
+            if let Some(ant_key) = anthropic_api_key {
+                let response = query_anthropic(
+                    client,
+                    ant_key,
+                    anthropic_model,
+                    messages,
+                    max_tokens,
+                    timeout_secs,
+                    retries,
+                    opts.effort,
+                )
+                .await;
+                if !is_error_response(&response) {
+                    return (name.to_string(), anthropic_model.to_string(), response);
+                }
+                primary_response = Some(response);
+                // Anthropic failed — fall through to OpenRouter
             }
-            primary_response = Some(response);
-            // Anthropic failed — fall through to OpenRouter
         }
-    }
 
-    // For GLM: try bigmodel.cn directly first (more reliable than OpenRouter z-ai)
-    if let Some(("zhipu", zhipu_model)) = fallback {
-        if let Some(zapi_key) = zhipu_api_key {
-            let response = query_bigmodel(
-                client,
-                zapi_key,
-                zhipu_model,
-                messages,
-                max_tokens,
-                timeout_secs,
-                retries,
-            )
-            .await;
-            if !is_error_response(&response) {
-                return (name.to_string(), zhipu_model.to_string(), response);
+        // For GLM: try bigmodel.cn directly first (more reliable than OpenRouter z-ai)
+        if let Some(("zhipu", zhipu_model)) = fallback {
+            if let Some(zapi_key) = zhipu_api_key {
+                let response = query_bigmodel(
+                    client,
+                    zapi_key,
+                    zhipu_model,
+                    messages,
+                    max_tokens,
+                    timeout_secs,
+                    retries,
+                )
+                .await;
+                if !is_error_response(&response) {
+                    return (name.to_string(), zhipu_model.to_string(), response);
+                }
+                primary_response = Some(response);
+                // bigmodel.cn failed — fall through to OpenRouter
             }
-            primary_response = Some(response);
-            // bigmodel.cn failed — fall through to OpenRouter
         }
-    }
 
-    // For Grok: try xAI directly first
-    if let Some(("xai", xai_model)) = fallback {
-        if let Some(xapi_key) = xai_api_key {
-            let response = query_xai(
-                client,
-                xapi_key,
-                xai_model,
-                messages,
-                max_tokens,
-                timeout_secs,
-                retries,
-                effort,
-            )
-            .await;
-            if !is_error_response(&response) {
-                return (name.to_string(), xai_model.to_string(), response);
+        // For Grok: try xAI directly first
+        if let Some(("xai", xai_model)) = fallback {
+            if let Some(xapi_key) = xai_api_key {
+                let response = query_xai(
+                    client,
+                    xapi_key,
+                    xai_model,
+                    messages,
+                    max_tokens,
+                    timeout_secs,
+                    retries,
+                    opts.effort,
+                )
+                .await;
+                if !is_error_response(&response) {
+                    return (name.to_string(), xai_model.to_string(), response);
+                }
+                primary_response = Some(response);
+                // xAI failed — fall through to OpenRouter
             }
-            primary_response = Some(response);
-            // xAI failed — fall through to OpenRouter
         }
-    }
 
-    // For Gemini: try Google AI Studio directly first
-    if let Some(("google", google_model)) = fallback {
-        if let Some(gapi_key) = google_api_key {
-            let response = query_google_ai_studio(
-                client,
-                gapi_key,
-                google_model,
-                messages,
-                max_tokens,
-                timeout_secs,
-                retries,
-                effort,
-            )
-            .await;
-            if !is_error_response(&response) {
-                return (name.to_string(), google_model.to_string(), response);
+        // For Gemini: try Google AI Studio directly first
+        if let Some(("google", google_model)) = fallback {
+            if let Some(gapi_key) = google_api_key {
+                let response = query_google_ai_studio(
+                    client,
+                    gapi_key,
+                    google_model,
+                    messages,
+                    max_tokens,
+                    timeout_secs,
+                    retries,
+                    opts.effort,
+                )
+                .await;
+                if !is_error_response(&response) {
+                    return (name.to_string(), google_model.to_string(), response);
+                }
+                primary_response = Some(response);
+                // Google AI Studio failed — fall through to OpenRouter
             }
-            primary_response = Some(response);
-            // Google AI Studio failed — fall through to OpenRouter
         }
-    }
+    } // end native API skip block
 
     let response = query_model(
         client,
@@ -1041,7 +1062,7 @@ pub async fn query_model_with_fallback(
         timeout_secs,
         retries,
         cost_tracker,
-        effort,
+        opts,
     )
     .await;
 
@@ -1079,7 +1100,7 @@ pub async fn query_model_async(
     timeout_secs: f64,
     retries: u32,
     cost_tracker: Option<&CostTracker>,
-    effort: Option<ReasoningEffort>,
+    opts: &QueryOptions,
 ) -> (String, String, String) {
     query_model_with_fallback(
         client,
@@ -1098,7 +1119,7 @@ pub async fn query_model_async(
         timeout_secs,
         retries,
         cost_tracker,
-        effort,
+        opts,
     )
     .await
 }
@@ -1117,7 +1138,7 @@ pub async fn run_parallel(
     max_tokens: u32,
     timeout_secs: f64,
     cost_tracker: Option<&CostTracker>,
-    effort: Option<ReasoningEffort>,
+    opts: &QueryOptions,
     output: Option<&mut dyn Output>,
 ) -> Vec<(String, String, String)> {
     let client = Client::new();
@@ -1152,6 +1173,7 @@ pub async fn run_parallel(
             let fallback_owned: Option<(String, String)> =
                 fallback.map(|(p, m)| (p.to_string(), m.to_string()));
             let cost_tracker = cost_tracker.cloned();
+            let opts = opts.clone();
 
             tokio::spawn(async move {
                 let fallback_ref: Option<(&str, &str)> = fallback_owned
@@ -1182,7 +1204,7 @@ pub async fn run_parallel(
                         timeout_secs,
                         2,
                         cost_tracker.as_ref(),
-                        effort,
+                        &opts,
                     ),
                 )
                 .await
@@ -1242,7 +1264,7 @@ pub async fn run_parallel_with_different_messages(
     max_tokens: u32,
     timeout_secs: f64,
     cost_tracker: Option<&CostTracker>,
-    effort: Option<ReasoningEffort>,
+    opts: &QueryOptions,
     output: Option<&mut dyn Output>,
 ) -> Vec<(String, String, String)> {
     assert_eq!(
@@ -1271,6 +1293,7 @@ pub async fn run_parallel_with_different_messages(
             let fallback_owned: Option<(String, String)> =
                 fallback.map(|(p, m)| (p.to_string(), m.to_string()));
             let cost_tracker = cost_tracker.cloned();
+            let opts = opts.clone();
 
             tokio::spawn(async move {
                 let fallback_ref: Option<(&str, &str)> = fallback_owned
@@ -1301,7 +1324,7 @@ pub async fn run_parallel_with_different_messages(
                         timeout_secs,
                         2,
                         cost_tracker.as_ref(),
-                        effort,
+                        &opts,
                     ),
                 )
                 .await
@@ -1384,7 +1407,7 @@ pub async fn classify_mode(
         15.0,
         2,
         cost_tracker,
-        None,
+        &QueryOptions::internal(),
     )
     .await;
 
@@ -1502,5 +1525,46 @@ mod tests {
         assert_eq!(content, "visible");
         // reasoning_details is present but we don't use it
         assert!(data["choices"][0]["delta"]["reasoning_details"].is_string());
+    }
+
+    // --- Web search plugins ---
+
+    #[test]
+    fn test_web_search_plugins_json() {
+        use crate::config::WebSearchConfig;
+        let config = WebSearchConfig::default();
+        let opts = QueryOptions::new(None, Some(config));
+        let mut body = serde_json::json!({"model": "test", "messages": []});
+        if let Some(ref config) = opts.web_search {
+            body["plugins"] = web_search_plugin_json(config);
+        }
+        let plugins = body["plugins"].as_array().unwrap();
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0]["id"], "web");
+        assert_eq!(plugins[0]["max_results"], 5);
+        assert_eq!(plugins[0]["engine"], "exa");
+    }
+
+    #[test]
+    fn test_no_plugins_without_web_search() {
+        let opts = QueryOptions::default();
+        let mut body = serde_json::json!({"model": "test", "messages": []});
+        if let Some(ref config) = opts.web_search {
+            body["plugins"] = web_search_plugin_json(config);
+        }
+        assert!(body.get("plugins").is_none());
+    }
+
+    #[test]
+    fn test_web_search_custom_max_results() {
+        use crate::config::{WebSearchConfig, SearchEngine};
+        let config = WebSearchConfig { max_results: 3, engine: SearchEngine::Native };
+        let opts = QueryOptions::new(None, Some(config));
+        let mut body = serde_json::json!({"model": "test", "messages": []});
+        if let Some(ref config) = opts.web_search {
+            body["plugins"] = web_search_plugin_json(config);
+        }
+        assert_eq!(body["plugins"][0]["max_results"], 3);
+        assert_eq!(body["plugins"][0]["engine"], "native");
     }
 }
