@@ -157,9 +157,13 @@ async fn main() {
         // regardless of --quiet so TaskOutput shows progress and the task doesn't look stuck.
         Box::new(AgentOutput::new(None, false))
     } else if piped {
-        // Stdout is a pipe (e.g. CC background task) — pipe buffers overflow on long
-        // deliberations. Suppress stdout; session auto-saves to disk. Print path at end.
-        Box::new(consilium::session::SilentOutput)
+        if std::env::var("CLAUDECODE").is_ok() {
+            // CC background task — stream full output so TaskOutput shows progress
+            Box::new(AgentOutput::new(None, false))
+        } else {
+            // Regular pipe — suppress to avoid buffer overflow; session auto-saves to disk.
+            Box::new(consilium::session::SilentOutput)
+        }
     } else if args.stream || args.quiet {
         setup_live_output(effective_quiet, color)
     } else {
@@ -369,8 +373,9 @@ async fn main() {
         result.extra.clone(),
     );
 
-    // When piped (e.g. CC background task), stdout was suppressed to avoid pipe
+    // When piped without CLAUDECODE (regular pipe), stdout was suppressed to avoid pipe
     // buffer overflow. Print just the session path so the caller can `cat` it.
+    // When CLAUDECODE is set, output was already streamed; still print path for reference.
     if piped {
         if let Some(path) = &session_path {
             println!("{}", path.display());
