@@ -558,6 +558,68 @@ impl Default for CostTracker {
     }
 }
 
+/// Web search plugin configuration for OpenRouter.
+/// User-visible answer phases inherit session config; internal phases use none.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WebSearchConfig {
+    pub max_results: u8,
+    pub engine: SearchEngine,
+}
+
+impl Default for WebSearchConfig {
+    fn default() -> Self {
+        Self {
+            max_results: 5,
+            engine: SearchEngine::Exa,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum SearchEngine {
+    #[default]
+    Exa,
+    Native,
+    Firecrawl,
+    Parallel,
+}
+
+impl SearchEngine {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Exa => "exa",
+            Self::Native => "native",
+            Self::Firecrawl => "firecrawl",
+            Self::Parallel => "parallel",
+        }
+    }
+}
+
+/// Per-request options threaded through all API calls.
+/// Web search is per-model, per-phase by design. User-visible answer phases inherit
+/// session opts; internal helper phases use `internal()`. Council judge is special-cased
+/// in `query_judge()`. Oxford prior/verdict remain search-on (user-visible, not `query_judge`).
+/// Clone-only (not Copy) to allow future Vec fields (e.g. tool definitions).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct QueryOptions {
+    pub effort: Option<ReasoningEffort>,
+    pub web_search: Option<WebSearchConfig>, // None = disabled
+}
+
+impl QueryOptions {
+    pub fn new(effort: Option<ReasoningEffort>, web_search: Option<WebSearchConfig>) -> Self {
+        Self { effort, web_search }
+    }
+
+    /// For internal helper phases — no web search, no session effort.
+    pub fn internal() -> Self {
+        Self {
+            effort: None,
+            web_search: None,
+        }
+    }
+}
+
 /// Chat message for API calls.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Message {
@@ -1085,6 +1147,59 @@ mod tests {
         tracker.add(0.05);
         clone.add(0.10);
         assert!((tracker.total() - 0.15).abs() < 0.001);
+    }
+
+    // --- QueryOptions ---
+
+    #[test]
+    fn test_query_options_default() {
+        let opts = QueryOptions::default();
+        assert_eq!(opts.effort, None);
+        assert_eq!(opts.web_search, None);
+    }
+
+    #[test]
+    fn test_query_options_with_web_search() {
+        let opts = QueryOptions::new(None, Some(WebSearchConfig::default()));
+        assert_eq!(opts.web_search, Some(WebSearchConfig::default()));
+        assert_eq!(opts.effort, None);
+    }
+
+    #[test]
+    fn test_query_options_with_effort_and_search() {
+        let config = WebSearchConfig { max_results: 3, engine: SearchEngine::Exa };
+        let opts = QueryOptions::new(Some(ReasoningEffort::High), Some(config.clone()));
+        assert_eq!(opts.effort, Some(ReasoningEffort::High));
+        assert_eq!(opts.web_search, Some(config));
+    }
+
+    #[test]
+    fn test_query_options_clone_is_independent() {
+        let opts = QueryOptions::new(Some(ReasoningEffort::Low), Some(WebSearchConfig::default()));
+        let clone = opts.clone();
+        assert_eq!(opts, clone);
+    }
+
+    #[test]
+    fn test_query_options_internal() {
+        let opts = QueryOptions::internal();
+        assert_eq!(opts.effort, None);
+        assert_eq!(opts.web_search, None);
+    }
+
+    #[test]
+    fn test_web_search_config_default_engine() {
+        let config = WebSearchConfig::default();
+        assert_eq!(config.max_results, 5);
+        assert_eq!(config.engine, SearchEngine::Exa);
+    }
+
+    #[test]
+    fn test_search_engine_as_str() {
+        assert_eq!(SearchEngine::Exa.as_str(), "exa");
+        assert_eq!(SearchEngine::Native.as_str(), "native");
+        assert_eq!(SearchEngine::Firecrawl.as_str(), "firecrawl");
+        assert_eq!(SearchEngine::Parallel.as_str(), "parallel");
     }
 
     #[test]

@@ -33,6 +33,26 @@ fn test_help_includes_examples() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .stdout(predicate::str::contains("--judge-model"))
         .stdout(predicate::str::contains("--critic-model"))
-        .stdout(predicate::str::contains("--no-critic"));
+        .stdout(predicate::str::contains("--no-critic"))
+        .stdout(predicate::str::contains("--web-search"))
+        .stdout(predicate::str::contains("--web-engine"));
+    Ok(())
+}
+
+#[test]
+fn test_web_search_zero_rejected() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("consilium"));
+    cmd.args(["test question", "--web-search", "0"]);
+    cmd.assert().failure();
+    Ok(())
+}
+
+#[test]
+fn test_web_engine_requires_web_search() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("consilium"));
+    cmd.args(["test question", "--web-engine", "native"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("--web-search"));
     Ok(())
 }

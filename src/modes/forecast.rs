@@ -3,7 +3,7 @@
 use crate::api::{query_model, run_parallel_with_different_messages};
 use crate::config::{
     model_max_output_tokens, sanitize_speaker_content, CostTracker, Message, ModelEntry,
-    SessionResult, DISCUSS_HOST,
+    QueryOptions, SessionResult, DISCUSS_HOST,
 };
 use crate::prompts::{
     forecast_blind_system, forecast_host_divergence, forecast_host_synthesis,
@@ -27,6 +27,7 @@ pub async fn run_forecast(
     _format: &str,
     timeout: f64,
     output: &mut dyn Output,
+    opts: &QueryOptions,
 ) -> SessionResult {
     let start = Instant::now();
     let cost_tracker = CostTracker::new();
@@ -65,7 +66,7 @@ pub async fn run_forecast(
         500,
         timeout,
         Some(&cost_tracker),
-        None,
+        opts,
         None,
     )
     .await;
@@ -106,7 +107,7 @@ pub async fn run_forecast(
         timeout,
         2,
         Some(&cost_tracker),
-        None,
+        opts,
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", host_divergence));
@@ -151,7 +152,7 @@ pub async fn run_forecast(
         600,
         timeout,
         Some(&cost_tracker),
-        None,
+        opts,
         None,
     )
     .await;
@@ -192,7 +193,7 @@ pub async fn run_forecast(
         timeout,
         2,
         Some(&cost_tracker),
-        None,
+        opts,
     )
     .await;
     let _ = output.write_str(&format!("{}\n\n", host_distribution));

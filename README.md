@@ -113,6 +113,8 @@ consilium "Is consciousness computable?" --socratic
 --followup                  Interactive drill-down after synthesis (council mode)
 --rounds N                  Rounds for discuss/socratic (0 = unlimited)
 --effort low|medium|high    Per-phase reasoning effort for thinking models
+--web-search [N]            Web search grounding [default: 5 results, engine: exa]
+--web-engine ENGINE         Search engine: exa (default, ~$0.02/req), native (provider pricing), firecrawl, parallel
 --thorough                  Disable early consensus exit
 --output file.md            Save transcript to file
 --format json|yaml|prose    Output format

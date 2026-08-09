@@ -4,7 +4,7 @@ use crate::api::{query_judge, query_model, query_model_async, run_parallel};
 use crate::config::{
     detect_consensus, detect_social_context, is_error_response, model_max_output_tokens,
     parse_confidence, resolved_critique_model_with_override, resolved_judge_model_with_override,
-    sanitize_speaker_content, CostTracker, Message, ModelEntry, ReasoningEffort, SessionResult,
+    sanitize_speaker_content, CostTracker, Message, ModelEntry, QueryOptions, SessionResult,
     EXTRACTION_MODEL,
 };
 use crate::prompts::{
@@ -224,7 +224,7 @@ pub async fn extract_structured_summary(
             30.0,
             2,
             cost_tracker,
-            None,
+            &QueryOptions::internal(),
         )
         .await
         .trim()
@@ -368,7 +368,7 @@ pub async fn decompose_question(
         120.0,
         2,
         Some(cost_tracker),
-        None,
+        &QueryOptions::internal(),
     )
     .await;
 
@@ -433,7 +433,7 @@ async fn compress_round_context(
         30.0,
         2,
         Some(cost_tracker),
-        None,
+        &QueryOptions::internal(),
     )
     .await;
 
@@ -465,7 +465,7 @@ async fn run_blind_phase_parallel(
     domain_hint: Option<&str>,
     sub_questions: Option<&[String]>,
     cost_tracker: &CostTracker,
-    effort: Option<ReasoningEffort>,
+    opts: &QueryOptions,
 ) -> Vec<(String, String, String)> {
     let mut blind_system = council_blind_system();
     blind_system = append_optional_context(blind_system, domain_hint, false, persona);
@@ -509,7 +509,7 @@ async fn run_blind_phase_parallel(
         1500,
         blind_timeout,
         Some(cost_tracker),
-        effort,
+        opts,
         None,
     )
     .await;
@@ -541,7 +541,7 @@ async fn run_xpol_phase_parallel(
     domain_hint: Option<&str>,
     display_names: &HashMap<String, String>,
     cost_tracker: &CostTracker,
-    effort: Option<ReasoningEffort>,
+    opts: &QueryOptions,
 ) -> Vec<(String, String, String)> {
     let mut xpol_system = council_xpol_system();
     xpol_system = append_optional_context(xpol_system, domain_hint, false, persona);
@@ -585,7 +585,7 @@ async fn run_xpol_phase_parallel(
         1500,
         timeout.min(90.0),
         Some(cost_tracker),
-        effort,
+        opts,
         None,
     )
     .await;
@@ -617,7 +617,7 @@ pub async fn run_followup_discussion(
     persona: Option<&str>,
     output: &mut dyn Output,
     cost_tracker: &CostTracker,
-    effort: Option<ReasoningEffort>,
+    opts: &QueryOptions,
 ) -> String {
     let client = Client::new();
     let followup_models = &council_config[..council_config.len().min(2)];
@@ -672,7 +672,7 @@ pub async fn run_followup_discussion(
             timeout,
             2,
             Some(cost_tracker),
-            effort,
+            opts,
         )
         .await;
 
@@ -717,7 +717,7 @@ pub async fn run_council(
     cross_pollinate: bool,
     followup: bool,
     thorough: bool,
-    effort: Option<ReasoningEffort>,
+    opts: &QueryOptions,
     judge_model_override: Option<&str>,
     critic_model_override: Option<&str>,
     no_critic: bool,
@@ -751,7 +751,7 @@ pub async fn run_council(
             domain_hint,
             sub_questions.as_deref(),
             &cost_tracker,
-            effort,
+            opts,
         )
         .await;
 
@@ -856,7 +856,7 @@ pub async fn run_council(
             domain_hint,
             &display_names,
             &cost_tracker,
-            effort,
+            opts,
         )
         .await;
 
@@ -1045,7 +1045,7 @@ pub async fn run_council(
                     timeout,
                     2,
                     Some(&cost_tracker),
-                    effort.map(|e| e.step_down()),
+                    &QueryOptions::new(opts.effort.map(|e| e.step_down()), opts.web_search.clone()),
                 ),
             )
             .await
@@ -1347,7 +1347,7 @@ pub async fn run_council(
                     300.0,
                     2,
                     Some(&cost_tracker),
-                    effort,
+                    &QueryOptions::internal(),
                 )
                 .await;
 
@@ -1465,7 +1465,7 @@ pub async fn run_council(
             persona,
             output,
             &cost_tracker,
-            effort,
+            opts,
         )
         .await;
 

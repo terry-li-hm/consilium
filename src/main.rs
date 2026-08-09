@@ -4,7 +4,7 @@ use consilium::api::classify_mode;
 use consilium::cli::Cli;
 use consilium::config::{
     discuss_models, oxford_models, quick_models, redteam_models, resolved_council, CostTracker,
-    ReasoningEffort,
+    QueryOptions, ReasoningEffort, WebSearchConfig,
 };
 use consilium::modes::{council, discuss, forecast, oxford, premortem, quick, redteam};
 use consilium::session::{
@@ -149,6 +149,11 @@ async fn main() {
         auto_mode
     };
     let effort = args.effort.as_deref().and_then(ReasoningEffort::from_str);
+    let web_search = args.web_search.map(|max_results| WebSearchConfig {
+        max_results,
+        engine: args.web_engine.unwrap_or_default(),
+    });
+    let opts = QueryOptions::new(effort, web_search);
 
     let color = std::env::var("NO_COLOR").is_err() && std::io::stdout().is_terminal();
     let piped = stdout_is_pipe();
@@ -187,7 +192,7 @@ async fn main() {
                 &mut *output,
                 &args.format,
                 args.timeout,
-                effort,
+                &opts,
             )
             .await
         }
@@ -206,7 +211,7 @@ async fn main() {
                 &args.format,
                 args.timeout,
                 &mut *output,
-                effort,
+                &opts,
             )
             .await
         }
@@ -225,7 +230,7 @@ async fn main() {
                 &args.format,
                 args.timeout,
                 &mut *output,
-                effort,
+                &opts,
             )
             .await
         }
@@ -244,6 +249,7 @@ async fn main() {
                 &args.format,
                 args.timeout,
                 &mut *output,
+                &opts,
             )
             .await
         }
@@ -262,6 +268,7 @@ async fn main() {
                 &args.format,
                 args.timeout,
                 &mut *output,
+                &opts,
             )
             .await
         }
@@ -283,7 +290,7 @@ async fn main() {
                 args.timeout,
                 &mut *output,
                 args.thorough,
-                effort,
+                &opts,
             )
             .await
         }
@@ -347,7 +354,7 @@ async fn main() {
                 args.xpol,
                 args.followup,
                 args.thorough,
-                effort,
+                &opts,
                 args.judge_model.as_deref(),
                 args.critic_model.as_deref(),
                 args.no_critic,

@@ -2,8 +2,8 @@
 
 use crate::api::{query_model_async, query_model_streaming};
 use crate::config::{
-    fallback_also_failed_message, is_error_response, model_max_output_tokens,
-    per_model_max_tokens, CostTracker, Message, ModelEntry, ReasoningEffort, SessionResult,
+    fallback_also_failed_message, is_error_response, model_max_output_tokens, per_model_max_tokens,
+    CostTracker, Message, ModelEntry, QueryOptions, SessionResult,
 };
 use crate::session::Output;
 use chrono::Local;
@@ -38,7 +38,7 @@ async fn run_quick_streaming(
     max_tokens: u32,
     timeout: f64,
     cost_tracker: &CostTracker,
-    effort: Option<ReasoningEffort>,
+    opts: &QueryOptions,
     output: &mut dyn Output,
 ) -> Vec<(String, String, String, u64)> {
     let client = Client::new();
@@ -61,10 +61,8 @@ async fn run_quick_streaming(
         let model_name = model.split('/').next_back().unwrap_or(&model).to_string();
         let model_max_tokens =
             model_max_output_tokens(&model).min(per_model_max_tokens(&model, max_tokens));
-        let fallback_owned: Option<(String, String)> =
-            fallback.map(|(provider, fallback_model)| {
-                (provider.to_string(), fallback_model.to_string())
-            });
+        let fallback_owned: Option<(String, String)> = fallback
+            .map(|(provider, fallback_model)| (provider.to_string(), fallback_model.to_string()));
         let google_api_key = google_api_key.map(|s| s.to_string());
         let zhipu_api_key = zhipu_api_key.map(|s| s.to_string());
         let moonshot_api_key = moonshot_api_key.map(|s| s.to_string());
@@ -72,6 +70,7 @@ async fn run_quick_streaming(
         let xai_api_key = xai_api_key.map(|s| s.to_string());
         let anthropic_api_key = anthropic_api_key.map(|s| s.to_string());
         let cost_tracker = cost_tracker.clone();
+        let opts = opts.clone();
 
         pending.push(async move {
             let participant_start = Instant::now();
@@ -85,13 +84,15 @@ async fn run_quick_streaming(
                 model_max_tokens,
                 timeout,
                 Some(&cost_tracker),
-                effort,
+                &opts,
                 &mut null_output,
             )
             .await;
 
             let mut used_model_name = model_name.clone();
-            let fallback_ref = fallback_owned.as_ref().map(|(p, m)| (p.as_str(), m.as_str()));
+            let fallback_ref = fallback_owned
+                .as_ref()
+                .map(|(p, m)| (p.as_str(), m.as_str()));
 
             // Fallback only if streaming failed.
             if is_error_response(&response) {
@@ -113,13 +114,12 @@ async fn run_quick_streaming(
                     timeout,
                     2,
                     Some(&cost_tracker),
-                    effort,
+                    &opts,
                 )
                 .await;
 
                 if is_error_response(&fb_response) {
-                    response =
-                        fallback_also_failed_message(&name, &primary_response, &fb_response);
+                    response = fallback_also_failed_message(&name, &primary_response, &fb_response);
                 } else {
                     used_model_name = fb_model_name;
                     response = fb_response;
@@ -136,7 +136,8 @@ async fn run_quick_streaming(
         });
     }
 
-    while let Some((name, _model_name, used_model_name, response, elapsed_ms)) = pending.next().await
+    while let Some((name, _model_name, used_model_name, response, elapsed_ms)) =
+        pending.next().await
     {
         let _ = output.begin_participant(&name);
         let _ = output.write_str(&format!("### {name}\n{response}\n\n"));
@@ -160,7 +161,7 @@ async fn run_quick_parallel(
     max_tokens: u32,
     timeout: f64,
     cost_tracker: &CostTracker,
-    effort: Option<ReasoningEffort>,
+    opts: &QueryOptions,
 ) -> Vec<(String, String, String, u64)> {
     let client = Client::new();
     let mut pending = FuturesUnordered::new();
@@ -173,10 +174,8 @@ async fn run_quick_parallel(
         let model = model.to_string();
         let model_max_tokens =
             model_max_output_tokens(&model).min(per_model_max_tokens(&model, max_tokens));
-        let fallback_owned: Option<(String, String)> =
-            fallback.map(|(provider, fallback_model)| {
-                (provider.to_string(), fallback_model.to_string())
-            });
+        let fallback_owned: Option<(String, String)> = fallback
+            .map(|(provider, fallback_model)| (provider.to_string(), fallback_model.to_string()));
         let google_api_key = google_api_key.map(|s| s.to_string());
         let zhipu_api_key = zhipu_api_key.map(|s| s.to_string());
         let moonshot_api_key = moonshot_api_key.map(|s| s.to_string());
@@ -184,10 +183,13 @@ async fn run_quick_parallel(
         let xai_api_key = xai_api_key.map(|s| s.to_string());
         let anthropic_api_key = anthropic_api_key.map(|s| s.to_string());
         let cost_tracker = cost_tracker.clone();
+        let opts = opts.clone();
 
         pending.push(async move {
             let start = Instant::now();
-            let fallback_ref = fallback_owned.as_ref().map(|(p, m)| (p.as_str(), m.as_str()));
+            let fallback_ref = fallback_owned
+                .as_ref()
+                .map(|(p, m)| (p.as_str(), m.as_str()));
             let (speaker_name, used_model_name, response) = query_model_async(
                 &client,
                 &api_key,
@@ -205,7 +207,7 @@ async fn run_quick_parallel(
                 timeout,
                 2,
                 Some(&cost_tracker),
-                effort,
+                &opts,
             )
             .await;
             (
@@ -244,7 +246,7 @@ pub async fn run_quick(
     output: &mut dyn Output,
     format: &str,
     timeout: f64,
-    effort: Option<ReasoningEffort>,
+    opts: &QueryOptions,
 ) -> SessionResult {
     let start = Instant::now();
     let cost_tracker = CostTracker::new();
@@ -279,7 +281,7 @@ pub async fn run_quick(
             2048,
             timeout,
             &cost_tracker,
-            effort,
+            opts,
             output,
         )
         .await
@@ -297,7 +299,7 @@ pub async fn run_quick(
             2048,
             timeout,
             &cost_tracker,
-            effort,
+            opts,
         )
         .await
     };
@@ -409,7 +411,10 @@ pub async fn run_quick(
         model_timings.insert(model_name.clone(), serde_json::Value::from(*elapsed_ms));
     }
     let mut extra = serde_json::Map::new();
-    extra.insert("model_timings".into(), serde_json::Value::Object(model_timings));
+    extra.insert(
+        "model_timings".into(),
+        serde_json::Value::Object(model_timings),
+    );
 
     SessionResult {
         transcript,
